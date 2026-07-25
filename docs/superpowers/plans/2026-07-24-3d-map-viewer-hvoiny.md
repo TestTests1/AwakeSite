@@ -26,11 +26,16 @@
 
 Разовая офлайн-подготовка ассета. Не трогает код сайта, но результат (файл модели + JSON с координатой спавна) нужен следующим задачам.
 
+**Статус: выполнено.** Изначально план предполагал один монолитный прогон экспортёра (шаги 4-9 ниже в исходной редакции). На практике сборка целой локации оказалась слишком тяжёлой для памяти и для лимита времени процесса в этой среде (см. «Что пошло не так» после шагов) — реально использован **тайловый пайплайн**: 12 независимых экспортов маленьких bbox → per-tile оптимизация → per-tile патч мировых координат → merge в один `.glb`. Итоговые интерфейсы (пути файлов, формат spawn.json) не изменились — Task 2-5 ничего не знают о тайлах и написаны корректно как есть.
+
 **Files:**
 - Create: `SC_Map_Dump-main/.venv/` (Python venv, не коммитится)
-- Create: `SC_Map_Dump-main/tmp_export/raw_hvoiny.glb` (промежуточный файл, не коммитится)
-- Create: `SC_Map_Dump-main/tmp_export/hvoiny.glb` (оптимизированный файл, не коммитится)
-- Create: `src/Awake.API/MapAssets/hvoiny.glb` (коммитится)
+- Create: `SC_Map_Dump-main/tile_export.py`, `optimize_tiles.py`, `apply_tile_offsets.py`, `combine_scenes.py`, `compute_tile_offsets.py` (орchestration-скрипты тайлового пайплайна, не коммитятся — лежат в gitignored `SC_Map_Dump-main/`)
+- Create: `SC_Map_Dump-main/tmp_export/tiles/tile_{r}_{c}.glb` (12 сырых тайлов, не коммитятся)
+- Create: `SC_Map_Dump-main/tmp_export/tiles_opt/tile_{r}_{c}.glb` (12 оптимизированных тайлов, не коммитятся)
+- Create: `SC_Map_Dump-main/tmp_export/tiles_world/tile_{r}_{c}.glb` (12 тайлов с исправленными мировыми координатами, не коммитятся)
+- Create: `SC_Map_Dump-main/tmp_export/hvoiny.glb` (финальный смерженный файл, не коммитится)
+- Create: `src/Awake.API/MapAssets/hvoiny.glb` (коммитится, 76.9 МБ)
 - Create: `frontend/awake-web/src/components/world/hvoiny.spawn.json` (коммитится)
 - Modify: `D:\Awake\.gitignore` (добавить `SC_Map_Dump-main/`)
 
@@ -38,7 +43,7 @@
 - Consumes: ничего (первая задача плана).
 - Produces: `src/Awake.API/MapAssets/hvoiny.glb` — бинарный `.glb`-файл, потребляется Task 2 (раздача файла) и Task 3 (парсинг на фронтенде). `frontend/awake-web/src/components/world/hvoiny.spawn.json` — JSON вида `{"x": <число>, "y": <число>, "z": <число>}`, импортируется напрямую как модуль в Task 4 (`WorldScene.tsx`) — никто не должен вручную переписывать эти числа куда-либо, только импортировать файл.
 
-- [ ] **Шаг 1: Добавить `SC_Map_Dump-main/` в `.gitignore` и закоммитить**
+- [x] **Шаг 1: Добавить `SC_Map_Dump-main/` в `.gitignore` и закоммитить**
 
 Открой `D:\Awake\.gitignore`, добавь в конец новую секцию:
 
@@ -52,17 +57,17 @@ git add .gitignore
 git commit -m "chore: игнорировать SC_Map_Dump-main (сторонний инструмент экспорта карты)"
 ```
 
-- [ ] **Шаг 2: Проверить, что инструмент и игра на месте**
+- [x] **Шаг 2: Проверить, что инструмент и игра на месте**
 
 ```powershell
 Test-Path "D:\Awake\SC_Map_Dump-main\tools\mdat_obj_export.py"
 Test-Path "D:\SteamLibrary\steamapps\common\STALCRAFT\map_cache\5.0\tournament_hvoiny"
-Test-Path "D:\SteamLibrary\steamapps\common\STALCRAFT\modassets\assets\stalcraft\textures\blockMap.texarr"
+Test-Path "D:\SteamLibrary\steamapps\common\STALCRAFT\modassets\assets\stalcraft\textures\hrblockMap.texarr"
 ```
 
 Ожидается: все три команды печатают `True`. Если хотя бы одна — `False`, дальше не идти, разобраться в чём разница путей.
 
-- [ ] **Шаг 3: Создать venv и поставить зависимости экспортёра**
+- [x] **Шаг 3: Создать venv и поставить зависимости экспортёра**
 
 ```powershell
 cd D:\Awake\SC_Map_Dump-main
@@ -72,95 +77,120 @@ python -m venv .venv
 
 Ожидается: `Successfully installed ... Pillow ... cryptography ... zstandard ...` без ошибок.
 
-- [ ] **Шаг 4: Запустить экспорт `tournament_hvoiny` в сырой `.glb`**
+- [x] **Шаг 4 (реально выполнено иначе — тайловый экспорт): 12 независимых мини-экспортов вместо одного монолитного**
+
+Прямой прогон без `--bbox` падает с `MemoryError` — у `tournament_hvoiny` 56.7 млн непустых блоков на 3058 чанков, из них ~85% (Y от 0 до ~55) — однородная сплошная заливка без видимой геометрии сверху. Добавление `--bbox 3328 55 -2496 4351 200 -1649` отсекло эту подложку, но даже так **целиком** локация оказалась экспортируема двумя разными способами провала:
+1. `_serialize_glb` падала с `MemoryError` на склейке многогигабайтных буферов через `+=` — исправлено потоковой записью через `f.write(...)` (см. патч в `tools/mdat_obj_export.py`: добавлен `import shutil`, `GLTF_PRIMITIVE_FLUSH_THRESHOLD`, `GltfPrimitive` переписан на посегментную запись во временные scratch-файлы вместо накопления в памяти, `_serialize_glb` переписана в два прохода через диск).
+2. Даже после фикса памяти единый экспорт **всей** локации не укладывался в лимит времени процесса этой среды (процесс гарантированно убивался в районе ~40-60 минут независимо от механизма запуска — `run_in_background`, PowerShell background job, `nohup`/`disown`).
+
+Решение — разбить `--bbox` на сетку **3×4 = 12 тайлов** (`SC_Map_Dump-main/tile_export.py`), каждый — отдельный быстрый вызов `mdat_obj_export.py` с `--context-padding 3` (соседние блоки за пределами строгого bbox всё равно подгружаются для корректного face culling на границах тайлов, без видимых швов). Скрипт идемпотентен: пропускает уже готовые `tile_{r}_{c}.glb`, что даёт бесплатный resume при обрыве процесса — просто перезапустить тот же скрипт.
 
 ```powershell
 cd D:\Awake\SC_Map_Dump-main
-New-Item -ItemType Directory -Force -Path .\tmp_export | Out-Null
-.\.venv\Scripts\python tools\mdat_obj_export.py `
-  "D:\SteamLibrary\steamapps\common\STALCRAFT\map_cache\5.0\tournament_hvoiny" `
-  ".\tmp_export\raw_hvoiny.glb" `
-  --double-sided --force-mask --hide-invisible `
-  --texarr "D:\SteamLibrary\steamapps\common\STALCRAFT\modassets\assets\stalcraft\textures\blockMap.texarr" `
-  --ctm-dir "D:\SteamLibrary\steamapps\common\STALCRAFT\modassets\assets\stalcraft\ctmpatcher\ctm"
+.\.venv\Scripts\python.exe tile_export.py
 ```
 
-(`--map-blocks` и `--weather-palettes` не передаются — у скрипта уже верные дефолты внутри `SC_Map_Dump-main/assets/configs/...`, они не зависят от текущей папки запуска.)
+Ожидается: в `tmp_export/tiles/` появляются 12 файлов `tile_0_0.glb` … `tile_2_3.glb`.
 
-Ожидается: скрипт отрабатывает без трейсбэка и печатает путь к результату; файл `tmp_export\raw_hvoiny.glb` появляется на диске. Если Blender не найден/не запущен — это нормально, скрипт `mdat_obj_export.py` Blender не использует вообще.
-
-- [ ] **Шаг 5: Проверить сырой `.glb` на валидность**
+- [x] **Шаг 5 (было — проверка сырого `.glb`; реально — проверка каждого тайла)**
 
 ```powershell
-.\.venv\Scripts\python -c "from pathlib import Path; data = Path('tmp_export/raw_hvoiny.glb').read_bytes(); assert data[:4] == b'glTF', 'bad magic'; assert int.from_bytes(data[4:8], 'little') == 2, 'bad version'; print('OK size_mb=', round(len(data)/1_048_576, 2))"
+.\.venv\Scripts\python -c "from pathlib import Path; [print(p.name, 'OK') for p in Path('tmp_export/tiles').glob('*.glb') if Path(p).read_bytes()[:4] == b'glTF']"
 ```
 
-Ожидается: `OK size_mb= <число>`, без `AssertionError`.
+- [x] **Шаг 6 (было — единая оптимизация; реально — per-tile оптимизация, потом merge)**
 
-- [ ] **Шаг 6: Оптимизировать `.glb` через `gltf-transform`**
+Мержить 12 сырых тайлов (суммарно ~3.1 ГБ) одним `gltf-transform merge` до сжатия — рискованно по памяти, поэтому сначала каждый тайл сжимается **отдельно** (`SC_Map_Dump-main/optimize_tiles.py`, тоже идемпотентный, пропускает готовые):
 
 ```powershell
 cd D:\Awake\SC_Map_Dump-main
-npx --yes @gltf-transform/cli optimize -h
+.\.venv\Scripts\python.exe optimize_tiles.py
 ```
 
-Ожидается: текст usage/help с перечнем флагов команды `optimize`, среди них должны быть флаги для сжатия геометрии (`--compress`) и изменения размера текстур (`--texture-size`). Если в выводе флаги называются иначе, чем ниже — используй имена именно из этого вывода.
+**Важная ловушка gltf-transform CLI:** формат вывода определяется по расширению файла. Если писать во временный путь вида `tile.glb.tmp` (чтобы потом атомарно переименовать), CLI видит расширение `.tmp`, не узнаёт его и вместо бинарного `.glb` пишет голый JSON-документ (без BIN-чанка) — файл выглядит правдоподобно по размеру, но не является валидным GLB. Правильно — временный путь должен заканчиваться на `.glb` (`tile.tmp.glb`), а не наоборот.
+
+Результат — `tmp_export/tiles_opt/tile_{r}_{c}.glb`, суммарно ~77 МБ вместо ~3.1 ГБ (сжатие `--compress meshopt --texture-size 1024`).
+
+**Открытая проблема, требующая Шага 6.5 ниже:** `mdat_obj_export.py` центрирует вершины каждого экспорта вокруг локального центра его собственного bbox (`compute_center_offset`, ~строка 5158) — то есть у каждого из 12 тайлов вершины лежат в локальных координатах относительно СВОЕГО центра, а не в абсолютных мировых координатах. Это смещение нигде не сохраняется в `.glb` — при простом мерже все 12 тайлов легли бы друг на друга в районе нуля координат.
+
+- [x] **Шаг 6.5 (не было в исходном плане): пересчитать и применить мировое смещение каждого тайла**
+
+Смещение детерминировано (это центр bbox только реально загруженных блоков, `compute_center_offset(export_blocks.keys())` в `write_glb`), поэтому его можно восстановить, не повторяя полный экспорт геометрии — только загрузку блоков через `load_world` с тем же bbox и `empty_ids={0}` (дефолт `--empty-id`). Скрипт `SC_Map_Dump-main/compute_tile_offsets.py` делает это для всех 12 тайлов и пишет `tmp_export/tile_offsets.json`.
+
+Затем `SC_Map_Dump-main/apply_tile_offsets.py` открывает каждый `tiles_opt/tile_{r}_{c}.glb`, находит mesh-ноду и прибавляет к её `translation` мировое смещение тайла (транспорт корректен, так как трансформация — чистые `translate + uniform-scale`, без ротации: `world = (T_quant + O_tile) + S_quant * v_normalized`). Результат — `tmp_export/tiles_world/tile_{r}_{c}.glb`.
 
 ```powershell
-npx --yes @gltf-transform/cli optimize tmp_export\raw_hvoiny.glb tmp_export\hvoiny.glb --compress meshopt --texture-size 1024
+cd D:\Awake\SC_Map_Dump-main
+.\.venv\Scripts\python.exe compute_tile_offsets.py
+.\.venv\Scripts\python.exe apply_tile_offsets.py
 ```
 
-Ожидается: команда завершается без ошибки, печатает сводку по оптимизации, файл `tmp_export\hvoiny.glb` создан и меньше по размеру, чем `raw_hvoiny.glb`.
-
-- [ ] **Шаг 7: Проверить оптимизированный `.glb` и сравнить размеры**
+- [x] **Шаг 6.6 (не было в исходном плане): merge тайлов**
 
 ```powershell
-.\.venv\Scripts\python -c "from pathlib import Path; raw = Path('tmp_export/raw_hvoiny.glb').stat().st_size; opt = Path('tmp_export/hvoiny.glb'); data = opt.read_bytes(); assert data[:4] == b'glTF', 'bad magic'; assert int.from_bytes(data[4:8], 'little') == 2, 'bad version'; print('raw_mb=', round(raw/1_048_576, 2), 'optimized_mb=', round(opt.stat().st_size/1_048_576, 2))"
+npx --yes @gltf-transform/cli merge tmp_export\tiles_world\tile_0_0.glb ... tmp_export\tiles_world\tile_2_3.glb tmp_export\hvoiny_raw_merge.glb
 ```
 
-Ожидается: `raw_mb= <X> optimized_mb= <Y>`, где `Y` заметно меньше `X` (иначе `--compress meshopt` не сработал — проверить вывод предыдущего шага на предупреждения).
+**Ещё одна ловушка:** флаг `--merge-scenes` у `gltf-transform merge` в этой версии (4.4.1) детерминированно теряет сцену **первого** входного файла — на выходе оказывается 11 нод из 12, `tile_0_0` пропадает без ошибок и предупреждений. Обходной путь — мержить **без** `--merge-scenes` (тогда все 12 сцен сохраняются, каждая как отдельный `Scene`), а затем самостоятельно объединить их в одну сцену (`SC_Map_Dump-main/combine_scenes.py` — читает JSON-чанк GLB, заменяет `scenes` на один объект со списком всех нод, `scene: 0`, переписывает файл; BIN-чанк не трогается).
 
-- [ ] **Шаг 8: Вычислить bounding box модели и координату спавна**
+```powershell
+.\.venv\Scripts\python.exe combine_scenes.py tmp_export\hvoiny_raw_merge.glb tmp_export\hvoiny.glb
+```
+
+- [x] **Шаг 7 (было — сравнение размеров; реально — валидация финального смерженного файла)**
+
+```powershell
+.\.venv\Scripts\python -c "from pathlib import Path; data = Path('tmp_export/hvoiny.glb').read_bytes(); assert data[:4] == b'glTF'; assert int.from_bytes(data[4:8], 'little') == 2; print('OK size_mb=', round(len(data)/1_048_576, 2))"
+```
+
+Ожидается: `OK size_mb= 76.79` (или близко).
+
+- [x] **Шаг 8: Вычислить bounding box модели и координату спавна**
+
+**Критичное отличие от исходного плана:** после `--compress meshopt`, `POSITION`-аксессоры используют квантованные нормализованные компоненты (`componentType: 5122` = `SHORT`, `normalized: true`), а сама трансформация в мировые координаты — на уровне ноды (`node.translation` + `node.scale`). Значения `accessor.min`/`accessor.max` при этом хранятся как **сырые целые** (до ±32767), а не как нормализованные `[-1, 1]` float — использовать их напрямую (как в исходном плане, где предполагался несжатый `.glb` без квантования) даёт мусорный bounding box (там, где ожидались тысячи единиц, получаются миллионы). Правильная формула: `normalized = raw / 32767` (SNORM), затем `world = node.translation + node.scale * normalized`, по обоим угловым точкам `min`/`max` каждого аксессора, агрегируя по всем 12 нодам (ротации нет, так что углы локального AABB остаются углами и в мировом пространстве).
 
 ```powershell
 .\.venv\Scripts\python -c "
 import json, struct
 from pathlib import Path
 
+COMPONENT_DIVISOR = {5120: 127.0, 5121: 255.0, 5122: 32767.0, 5123: 65535.0}
+
 data = Path('tmp_export/hvoiny.glb').read_bytes()
-assert data[:4] == b'glTF'
 json_len = struct.unpack_from('<I', data, 12)[0]
-assert data[16:20] == b'JSON'
 gltf = json.loads(data[20:20 + json_len])
 
-position_indices = set()
-for mesh in gltf.get('meshes', []):
-    for prim in mesh.get('primitives', []):
-        idx = prim.get('attributes', {}).get('POSITION')
-        if idx is not None:
-            position_indices.add(idx)
+overall_min = [float('inf')]*3
+overall_max = [float('-inf')]*3
+for node in gltf.get('nodes', []):
+    if 'mesh' not in node: continue
+    t = node.get('translation', [0.0,0.0,0.0])
+    s = node.get('scale', [1.0,1.0,1.0])
+    for prim in gltf['meshes'][node['mesh']]['primitives']:
+        idx = prim['attributes'].get('POSITION')
+        if idx is None: continue
+        acc = gltf['accessors'][idx]
+        if 'min' not in acc or 'max' not in acc: continue
+        lo, hi = list(acc['min']), list(acc['max'])
+        divisor = COMPONENT_DIVISOR.get(acc['componentType']) if acc.get('normalized') else None
+        if divisor:
+            lo = [max(v/divisor, -1.0) for v in lo]
+            hi = [max(v/divisor, -1.0) for v in hi]
+        for i in range(3):
+            c0, c1 = t[i]+s[i]*lo[i], t[i]+s[i]*hi[i]
+            overall_min[i] = min(overall_min[i], c0, c1)
+            overall_max[i] = max(overall_max[i], c0, c1)
 
-mins, maxs = [], []
-for idx in position_indices:
-    acc = gltf['accessors'][idx]
-    if 'min' in acc and 'max' in acc:
-        mins.append(acc['min'])
-        maxs.append(acc['max'])
-
-overall_min = [min(v[i] for v in mins) for i in range(3)]
-overall_max = [max(v[i] for v in maxs) for i in range(3)]
-center = [(overall_min[i] + overall_max[i]) / 2 for i in range(3)]
-spawn = {'x': center[0], 'y': overall_max[1] + 2, 'z': center[2]}
-print('min', overall_min)
-print('max', overall_max)
-print('spawn', spawn)
+center = [(overall_min[i]+overall_max[i])/2 for i in range(3)]
+spawn = {'x': center[0], 'y': overall_max[1]+2, 'z': center[2]}
+print('min', overall_min); print('max', overall_max); print('spawn', spawn)
 Path('tmp_export/hvoiny.spawn.json').write_text(json.dumps(spawn, indent=2), encoding='utf-8')
 "
 ```
 
-Ожидается: три строки (`min`, `max`, `spawn`) с реальными числами (не нулями/не ошибкой), и файл `tmp_export/hvoiny.spawn.json` создан. Значение `y` в `spawn` — это высота потолка/крыши модели плюс 2 метра запаса, что осмысленно (если это число выглядит как явный мусор — например, глубоко отрицательное или больше 500 — geometry могла содержать выбросы; в этом случае возьми `y` как медиану всех `max[1]` значений индивидуальных аксессоров вместо глобального максимума).
+Ожидается: `min`/`max` близко к реальным мировым координатам bbox локации (X: ~3328-4352, Z: ~-2496..-1648, Y: ~55-197 для «Хвойного») — если min/max получаются в миллионах, значит нормализация по `componentType`/`normalized` не применена. Значение `y` в `spawn` — высота потолка/крыши плюс 2 метра запаса.
 
-- [ ] **Шаг 9: Скопировать готовые файлы в бэкенд/фронтенд и закоммитить**
+- [x] **Шаг 9: Скопировать готовые файлы в бэкенд/фронтенд и закоммитить** — закоммичено в `45c1688`.
 
 ```powershell
 New-Item -ItemType Directory -Force -Path D:\Awake\src\Awake.API\MapAssets | Out-Null
