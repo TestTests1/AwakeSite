@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Одна локация на первую версию — `tournament_hvoiny`, один хардкоженный бэкенд-эндпоинт, без БД и без списка локаций (спека, раздел «Бэкенд»).
+- ~~Одна локация на первую версию — `tournament_hvoiny`, один хардкоженный бэкенд-эндпоинт~~ **(пересмотрено 2026-07-28: сконвертированы три локации, эндпоинт сделан параметрическим — `hvoiny`, `small_berdovka`, `nizina`)**. Без БД и без списка локаций: набор задан белым списком в коде (спека, раздел «Бэкенд»).
 - Файл модели коммитится в git внутри `src/Awake.API/MapAssets/` (не `wwwroot`, не внешнее хранилище, не git frontend) — спека, раздел «Хостинг».
 - Раздача файла — только через `[RankAuthorize(UserRank.Member)]`-эндпоинт, JWT такой же, как во всех остальных контроллерах (заголовок `Authorization: Bearer`).
 - Новый роут фронтенда — `_auth.world.tsx`, ранг-гейтинг на уровне компонента (`if (rank < UserRank.Member) return <Navigate to="/profile" />`), как в `_auth.boosts.tsx` — не новый механизм.
@@ -210,21 +210,24 @@ git commit -m "feat(world): 3D-модель локации «Хвойный» (�
 
 ## Task 2: Бэкенд — эндпоинт раздачи модели
 
+**Статус: выполнено.** Отклонение от исходной редакции: план был написан под **одну** локацию (`tournament_hvoiny`), но к моменту реализации были сконвертированы три — `hvoiny`, `small_berdovka`, `nizina`. По решению владельца (2026-07-28) эндпоинт сделан параметрическим, чтобы не переписывать контракт и фронтенд при добавлении второй карты. Имя локации приходит из URL, поэтому в `MapAssetService` оно проверяется по **белому списку** — иначе `../../appsettings.json` отдал бы наружу произвольный файл. Ниже по тексту имена `GetHvoinyModel*` и путь `/maps/hvoiny/model` заменены на `GetMapModel*` и `/maps/{location}/model`.
+
 **Files:**
 - Create: `src/Awake.Application/Common/Interfaces/IMapAssetService.cs`
-- Create: `src/Awake.Application/Features/Maps/Queries/GetHvoinyModel/GetHvoinyModelQuery.cs`
-- Create: `src/Awake.Application/Features/Maps/Queries/GetHvoinyModel/GetHvoinyModelQueryHandler.cs`
+- Create: `src/Awake.Application/Features/Maps/Queries/GetMapModel/GetMapModelQuery.cs`
+- Create: `src/Awake.Application/Features/Maps/Queries/GetMapModel/GetMapModelQueryHandler.cs`
 - Create: `src/Awake.Infrastructure/ExternalServices/Maps/MapAssetService.cs`
 - Modify: `src/Awake.Infrastructure/DependencyInjection.cs`
 - Create: `src/Awake.API/Controllers/MapsController.cs`
 - Modify: `src/Awake.API/Awake.API.csproj`
-- Test: `tests/Awake.Unit.Tests/Features/Maps/GetHvoinyModelQueryHandlerTests.cs`
+- Test: `tests/Awake.Unit.Tests/Features/Maps/GetMapModelQueryHandlerTests.cs`
+- Test: `tests/Awake.Unit.Tests/Infrastructure/MapAssetServiceTests.cs` (не было в исходном плане — покрывает белый список и попытки обхода пути)
 
 **Interfaces:**
-- Consumes: `src/Awake.API/MapAssets/hvoiny.glb` (файл из Task 1, проверяется через `File.Exists`).
-- Produces: `GET /api/maps/hvoiny/model` (`[RankAuthorize(UserRank.Member)]`) — отдаёт файл (`Content-Type: model/gltf-binary`) или `404`. Используется Task 3 (`mapsApi.getHvoinyModel`, путь `/maps/hvoiny/model`).
+- Consumes: `src/Awake.API/MapAssets/{location}.glb` (файлы из Task 1, проверяются через `File.Exists`).
+- Produces: `GET /api/maps/{location}/model` (`[RankAuthorize(UserRank.Member)]`), где `location` ∈ `{hvoiny, small_berdovka, nizina}` — отдаёт файл (`Content-Type: model/gltf-binary`, `enableRangeProcessing: true`) или `404` для неизвестной локации и для локации без выложенного файла. Используется Task 3 (`mapsApi.getMapModel(location)`, путь `/maps/{location}/model`).
 
-- [ ] **Шаг 1: Написать падающий тест хендлера**
+- [x] **Шаг 1: Написать падающий тест хендлера**
 
 Создать `tests/Awake.Unit.Tests/Features/Maps/GetHvoinyModelQueryHandlerTests.cs`:
 
@@ -265,12 +268,12 @@ public class GetHvoinyModelQueryHandlerTests
 }
 ```
 
-- [ ] **Шаг 2: Убедиться, что тест не компилируется (типов ещё нет)**
+- [x] **Шаг 2: Убедиться, что тест не компилируется (типов ещё нет)**
 
 Run: `dotnet build tests/Awake.Unit.Tests`
 Expected: FAIL — `IMapAssetService`, `GetHvoinyModelQuery`, `GetHvoinyModelQueryHandler` не найдены.
 
-- [ ] **Шаг 3: Создать интерфейс `IMapAssetService`**
+- [x] **Шаг 3: Создать интерфейс `IMapAssetService`**
 
 Создать `src/Awake.Application/Common/Interfaces/IMapAssetService.cs`:
 
@@ -283,7 +286,7 @@ public interface IMapAssetService
 }
 ```
 
-- [ ] **Шаг 4: Создать запрос и хендлер**
+- [x] **Шаг 4: Создать запрос и хендлер**
 
 Создать `src/Awake.Application/Features/Maps/Queries/GetHvoinyModel/GetHvoinyModelQuery.cs`:
 
@@ -318,12 +321,12 @@ public class GetHvoinyModelQueryHandler(IMapAssetService mapAssetService)
 }
 ```
 
-- [ ] **Шаг 5: Запустить тест и убедиться, что он проходит**
+- [x] **Шаг 5: Запустить тест и убедиться, что он проходит**
 
 Run: `dotnet test tests/Awake.Unit.Tests --filter FullyQualifiedName~GetHvoinyModelQueryHandlerTests`
 Expected: `Passed! - Failed: 0, Passed: 2`.
 
-- [ ] **Шаг 6: Реализовать `IMapAssetService` в Infrastructure**
+- [x] **Шаг 6: Реализовать `IMapAssetService` в Infrastructure**
 
 Создать `src/Awake.Infrastructure/ExternalServices/Maps/MapAssetService.cs`:
 
@@ -343,7 +346,7 @@ public class MapAssetService(IWebHostEnvironment environment) : IMapAssetService
 }
 ```
 
-- [ ] **Шаг 7: Зарегистрировать сервис в DI**
+- [x] **Шаг 7: Зарегистрировать сервис в DI**
 
 В `src/Awake.Infrastructure/DependencyInjection.cs` добавить `using Awake.Infrastructure.ExternalServices.Maps;` к остальным `using`, и перед `return services;` добавить:
 
@@ -352,7 +355,7 @@ public class MapAssetService(IWebHostEnvironment environment) : IMapAssetService
         services.AddSingleton<IMapAssetService, MapAssetService>();
 ```
 
-- [ ] **Шаг 8: Создать контроллер**
+- [x] **Шаг 8: Создать контроллер**
 
 Создать `src/Awake.API/Controllers/MapsController.cs`:
 
@@ -384,7 +387,7 @@ public class MapsController(ISender sender) : ControllerBase
 }
 ```
 
-- [ ] **Шаг 9: Убедиться, что `MapAssets/hvoiny.glb` попадёт в publish-вывод**
+- [x] **Шаг 9: Убедиться, что `MapAssets/hvoiny.glb` попадёт в publish-вывод**
 
 В `src/Awake.API/Awake.API.csproj` добавить новый `<ItemGroup>` перед закрывающим `</Project>`:
 
@@ -394,7 +397,7 @@ public class MapsController(ISender sender) : ControllerBase
   </ItemGroup>
 ```
 
-- [ ] **Шаг 10: Собрать весь бэкенд и прогнать все тесты**
+- [x] **Шаг 10: Собрать весь бэкенд и прогнать все тесты**
 
 Run: `dotnet build`
 Expected: `Build succeeded.`
@@ -402,7 +405,7 @@ Expected: `Build succeeded.`
 Run: `dotnet test tests/Awake.Unit.Tests`
 Expected: все тесты проходят (было 154 на момент этого плана — теперь на 2 больше).
 
-- [ ] **Шаг 11: Коммит**
+- [x] **Шаг 11: Коммит**
 
 ```bash
 git add src/Awake.Application/Common/Interfaces/IMapAssetService.cs \
@@ -426,7 +429,7 @@ git commit -m "feat(world): эндпоинт GET /api/maps/hvoiny/model для �
 
 **Interfaces:**
 - Consumes: `apiClient`-паттерн авторизации из `frontend/awake-web/src/api/client.ts` (`useAuthStore.getState().accessToken`, `ApiError`), эндпоинт `GET /api/maps/hvoiny/model` из Task 2.
-- Produces: `mapsApi.getHvoinyModel(onProgress?: (ratio: number) => void): Promise<ArrayBuffer>` и `parseGltf(buffer: ArrayBuffer): Promise<THREE.Group>` — используются в Task 5 (`_auth.world.tsx`). `MapModel`/`Player`/`WorldScene` из Task 4 потребляют тип `THREE.Group`, который возвращает `parseGltf`.
+- Produces: `mapsApi.getMapModel(location: string, onProgress?: (ratio: number) => void): Promise<ArrayBuffer>` и `parseGltf(buffer: ArrayBuffer): Promise<THREE.Group>` — используются в Task 5 (`_auth.world.tsx`). `MapModel`/`Player`/`WorldScene` из Task 4 потребляют тип `THREE.Group`, который возвращает `parseGltf`.
 
 - [ ] **Шаг 1: Поставить 3D-зависимости**
 
@@ -507,9 +510,14 @@ async function fetchWithProgress(
   return buffer.buffer
 }
 
+export const MAP_LOCATIONS = ['hvoiny', 'small_berdovka', 'nizina'] as const
+export type MapLocation = (typeof MAP_LOCATIONS)[number]
+
 export const mapsApi = {
-  getHvoinyModel: (onProgress?: (ratio: number) => void): Promise<ArrayBuffer> =>
-    fetchWithProgress('/maps/hvoiny/model', onProgress),
+  getMapModel: (
+    location: MapLocation,
+    onProgress?: (ratio: number) => void,
+  ): Promise<ArrayBuffer> => fetchWithProgress(`/maps/${location}/model`, onProgress),
 }
 ```
 
@@ -820,6 +828,8 @@ git commit -m "feat(world): 3D-сцена и персонаж от первог�
 
 - [ ] **Шаг 3: Создать роут `_auth.world.tsx`**
 
+**Учесть отклонение Task 2:** локаций три, а не одна, поэтому в сниппете ниже `location` — не константа. Нужен выбор карты: состояние `const [location, setLocation] = useState<MapLocation>('hvoiny')` плюс переключатель из `MAP_LOCATIONS`, и `location` в зависимостях `useEffect`, чтобы модель перезагружалась при смене. Точка спавна тоже своя у каждой карты — `hvoiny.spawn.json`, `small_berdovka.spawn.json`, `nizina.spawn.json` (см. Task 4).
+
 Создать `frontend/awake-web/src/routes/_auth.world.tsx`:
 
 ```tsx
@@ -848,7 +858,7 @@ function WorldPage() {
     if (rank < UserRank.Member) return
     let cancelled = false
     mapsApi
-      .getHvoinyModel(setProgress)
+      .getMapModel(location, setProgress)
       .then((buffer) => parseGltf(buffer))
       .then((loaded) => {
         if (!cancelled) setScene(loaded)

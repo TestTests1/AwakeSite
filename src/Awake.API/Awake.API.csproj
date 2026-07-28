@@ -23,4 +23,10 @@
     <ProjectReference Include="..\Awake.Infrastructure\Awake.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- 3D-модели локаций: MapAssetService ищет их относительно ContentRootPath,
+       так что они должны попадать и в build-, и в publish-вывод -->
+  <ItemGroup>
+    <None Include="MapAssets\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

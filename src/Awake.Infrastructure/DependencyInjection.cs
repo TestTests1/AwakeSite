@@ -2,6 +2,7 @@ using Awake.Application.Common.Interfaces;
 using Awake.Application.Common.Interfaces.Repositories;
 using Awake.Infrastructure.ExternalServices.Discord;
 using Awake.Infrastructure.ExternalServices.Items;
+using Awake.Infrastructure.ExternalServices.Maps;
 using Awake.Infrastructure.ExternalServices.PlayerData;
 using Awake.Infrastructure.ExternalServices.PlayerData.Sources;
 using Awake.Infrastructure.Identity;
@@ -71,6 +72,9 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, CurrentUserService>();
 
         services.AddHttpContextAccessor();
+
+        // Карты (3D-вьюер)
+        services.AddSingleton<IMapAssetService, MapAssetService>();
 
         return services;
     }
