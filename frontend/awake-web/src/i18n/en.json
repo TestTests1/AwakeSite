@@ -85,6 +85,21 @@
     "empty": "Nobody has marked needed boosts yet",
     "emptyHint": "You can mark yours on your profile page"
   },
+  "world": {
+    "title": "3D location maps",
+    "open": "Open",
+    "loading": "Loading the 3D location model…",
+    "loadError": "Failed to load the 3D model",
+    "noWebgl": "Your browser doesn't support WebGL — the 3D map is unavailable",
+    "orbitHint": "LMB to orbit, RMB to pan, wheel to zoom",
+    "close": "Close map",
+    "cancel": "Cancel loading",
+    "maps": {
+      "hvoiny": "Hvoiny",
+      "small_berdovka": "Small Berdovka",
+      "nizina": "Nizina"
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "squads": "Squads",
@@ -92,6 +107,7 @@
     "manage": "Manage",
     "settings": "Settings",
     "boosts": "Boosts",
+    "world": "World",
     "logout": "Log out"
   },
   "common": {

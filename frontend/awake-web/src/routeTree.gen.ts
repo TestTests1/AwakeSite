@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuthRouteImport } from './routes/_auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthWorldRouteImport } from './routes/_auth.world'
 import { Route as AuthTicketsRouteImport } from './routes/_auth.tickets'
 import { Route as AuthSquadsRouteImport } from './routes/_auth.squads'
 import { Route as AuthSettingsRouteImport } from './routes/_auth.settings'
@@ -46,6 +47,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthWorldRoute = AuthWorldRouteImport.update({
+  id: '/world',
+  path: '/world',
+  getParentRoute: () => AuthRoute,
 } as any)
 const AuthTicketsRoute = AuthTicketsRouteImport.update({
   id: '/tickets',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthSettingsRoute
   '/squads': typeof AuthSquadsRouteWithChildren
   '/tickets': typeof AuthTicketsRouteWithChildren
+  '/world': typeof AuthWorldRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/manage/users': typeof AuthManageUsersRoute
   '/players/$userId': typeof AuthPlayersUserIdRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthDashboardRoute
   '/profile': typeof AuthProfileRoute
   '/settings': typeof AuthSettingsRoute
+  '/world': typeof AuthWorldRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/manage/users': typeof AuthManageUsersRoute
   '/players/$userId': typeof AuthPlayersUserIdRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/_auth/settings': typeof AuthSettingsRoute
   '/_auth/squads': typeof AuthSquadsRouteWithChildren
   '/_auth/tickets': typeof AuthTicketsRouteWithChildren
+  '/_auth/world': typeof AuthWorldRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/_auth/manage/users': typeof AuthManageUsersRoute
   '/_auth/players/$userId': typeof AuthPlayersUserIdRoute
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/squads'
     | '/tickets'
+    | '/world'
     | '/auth/callback'
     | '/manage/users'
     | '/players/$userId'
@@ -203,6 +213,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/profile'
     | '/settings'
+    | '/world'
     | '/auth/callback'
     | '/manage/users'
     | '/players/$userId'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/_auth/settings'
     | '/_auth/squads'
     | '/_auth/tickets'
+    | '/_auth/world'
     | '/auth/callback'
     | '/_auth/manage/users'
     | '/_auth/players/$userId'
@@ -270,6 +282,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/callback'
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_auth/world': {
+      id: '/_auth/world'
+      path: '/world'
+      fullPath: '/world'
+      preLoaderRoute: typeof AuthWorldRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/_auth/tickets': {
       id: '/_auth/tickets'
@@ -411,6 +430,7 @@ interface AuthRouteChildren {
   AuthSettingsRoute: typeof AuthSettingsRoute
   AuthSquadsRoute: typeof AuthSquadsRouteWithChildren
   AuthTicketsRoute: typeof AuthTicketsRouteWithChildren
+  AuthWorldRoute: typeof AuthWorldRoute
   AuthManageUsersRoute: typeof AuthManageUsersRoute
   AuthPlayersUserIdRoute: typeof AuthPlayersUserIdRoute
 }
@@ -422,6 +442,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthSettingsRoute: AuthSettingsRoute,
   AuthSquadsRoute: AuthSquadsRouteWithChildren,
   AuthTicketsRoute: AuthTicketsRouteWithChildren,
+  AuthWorldRoute: AuthWorldRoute,
   AuthManageUsersRoute: AuthManageUsersRoute,
   AuthPlayersUserIdRoute: AuthPlayersUserIdRoute,
 }

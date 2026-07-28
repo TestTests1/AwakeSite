@@ -16,6 +16,7 @@ import {
   LogOut,
   ChevronRight,
   Zap,
+  Box,
 } from 'lucide-react'
 import { NotificationBell } from '@/components/layout/NotificationBell'
 import { BrandMark } from '@/components/BrandMark'
@@ -45,6 +46,7 @@ export function Sidebar() {
     { to: '/profile' as const, label: 'Профиль', icon: UserCircle },
     ...(isMemberPlus ? [{ to: '/squads' as const, label: t('nav.squads'), icon: Shield }] : []),
     ...(isMemberPlus ? [{ to: '/boosts' as const, label: t('nav.boosts'), icon: Zap }] : []),
+    ...(isMemberPlus ? [{ to: '/world' as const, label: t('nav.world'), icon: Box }] : []),
     { to: '/tickets' as const, label: t('nav.tickets'), icon: FileText },
   ]
 

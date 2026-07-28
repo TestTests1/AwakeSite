@@ -11,6 +11,7 @@ import {
   UserCircle,
   Users,
   Zap,
+  Box,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import { UserRank } from '@/types/api'
@@ -91,6 +92,16 @@ export function MobileTabBar() {
                 >
                   <Zap size={16} />
                   {t('nav.boosts')}
+                </Link>
+              )}
+              {isMemberPlus && (
+                <Link
+                  to="/world"
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <Box size={16} />
+                  {t('nav.world')}
                 </Link>
               )}
               <Link
