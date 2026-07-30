@@ -2,10 +2,7 @@
   "rules": [
     {
       "allowed": {
-        "origins": [
-          "https://stalcraftclans.cc",
-          "http://localhost:5173"
-        ],
+        "origins": ["*"],
         "methods": ["GET", "HEAD"],
         "headers": ["Range", "Content-Type"]
       },
