@@ -28,12 +28,7 @@ public static class DependencyInjection
         // по которому не догадаться, что дело просто в незаданной переменной.
         var connectionString = configuration.GetConnectionString("Postgres");
         if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException(
-                "Строка подключения к базе пуста. Задайте ConnectionStrings__Postgres " +
-                "(двойное подчёркивание — это запись ConnectionStrings:Postgres в виде " +
-                "переменной окружения). Как её собрать на Railway — docs/deploy-railway.md.");
-        }
+            throw new InvalidOperationException(EmptyConnectionStringMessage(configuration));
 
         // принимаем и ссылку postgresql://…, какой её отдают хостинги
         services.AddDbContext<AppDbContext>(opt =>
@@ -92,5 +87,39 @@ public static class DependencyInjection
         services.AddSingleton<IMapAssetService, MapAssetService>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Настройки, которые обязаны прийти снаружи в рабочем окружении. Нужны не
+    /// сами по себе, а как срез: если пусто всё разом — переменные заданы не тому
+    /// сервису или не в том окружении, и искать опечатку в одном имени бесполезно.
+    /// </summary>
+    private static readonly string[] ExpectedSettings =
+    [
+        "ConnectionStrings:Postgres",
+        "Jwt:Secret",
+        "Discord:BotToken",
+        "Discord:OAuthRedirectUri",
+        "Cors:AllowedOrigin",
+        "MapAssets:BaseUrl",
+    ];
+
+    /// <summary>
+    /// Объясняет пустую строку подключения и заодно показывает, что вообще
+    /// доехало до приложения. Печатаются только имена и признак «задано» —
+    /// значения тут секретные, в журнал им нельзя.
+    /// </summary>
+    private static string EmptyConnectionStringMessage(IConfiguration configuration)
+    {
+        var seen = ExpectedSettings.Select(key =>
+            $"{key.Replace(':', '_').Replace("_", "__")}=" +
+            (string.IsNullOrWhiteSpace(configuration[key]) ? "нет" : "задано"));
+
+        return "Строка подключения к базе пуста. Задайте ConnectionStrings__Postgres "
+            + "(двойное подчёркивание — это запись ConnectionStrings:Postgres в виде "
+            + "переменной окружения). Как её собрать на Railway — docs/deploy-railway.md.\n"
+            + "Что видно приложению: " + string.Join(", ", seen) + ".\n"
+            + "Если «нет» стоит у всех — переменные заданы другому сервису или в другом "
+            + "окружении, и дело не в имени одной из них.";
     }
 }
