@@ -10,3 +10,10 @@ tests
 *.md
 .gitignore
 docker-compose.yml
+
+# Модели локаций в образ не кладём: это 581 МБ на каждую сборку и каждый деплой.
+# В рабочем окружении они берутся из внешнего хранилища (MapAssets:BaseUrl).
+src/Awake.API/MapAssets
+SC_Map_Dump-main
+tools
+v1-ultrakill

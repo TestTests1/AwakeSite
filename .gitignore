@@ -73,3 +73,18 @@ yarn-error.log*
 
 # ===== Сторонний инструмент экспорта карты (не часть сайта) =====
 SC_Map_Dump-main/
+
+# ===== Игровые ассеты =====
+# Модели локаций весят сотни мегабайт: у GitHub жёсткий предел 100 МБ на файл,
+# а каждый пере-экспорт добавлял бы в историю новую полную копию. Раздаются они
+# из внешнего хранилища — см. MapAssets:BaseUrl и tools/maps/README.md.
+src/Awake.API/MapAssets/*.glb
+frontend/awake-web/public/avatars/*.glb
+frontend/awake-web/public/props/*.glb
+
+# Исходники моделей, вынутые из игр
+v1-ultrakill/
+
+# ===== Служебные файлы Claude Code =====
+# Внутри лежат рабочие деревья — полные копии репозитория
+.claude/

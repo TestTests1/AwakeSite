@@ -13,6 +13,10 @@ dist-ssr
 *.local
 .tanstack/
 
+# Тайлы карт для локальных замеров производительности — десятки мегабайт,
+# в репозиторий не кладём
+public/tiles/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
