@@ -17,6 +17,11 @@ export default defineConfig({
     port: 5173,
     // скриншот-проверки вёрстки гоняются Chromium'ом из docker-контейнера api
     allowedHosts: ['host.docker.internal'],
-    proxy: { '/api': { target: 'http://localhost:5001', changeOrigin: true } },
+    proxy: {
+      '/api': { target: 'http://localhost:5001', changeOrigin: true },
+      // ws обязателен: SignalR поднимает WebSocket, и без него соединение
+      // молча падает на согласовании транспорта
+      '/hubs': { target: 'http://localhost:5001', changeOrigin: true, ws: true },
+    },
   },
 })

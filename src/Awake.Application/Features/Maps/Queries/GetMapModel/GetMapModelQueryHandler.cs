@@ -5,13 +5,13 @@ using MediatR;
 namespace Awake.Application.Features.Maps.Queries.GetMapModel;
 
 public class GetMapModelQueryHandler(IMapAssetService mapAssetService)
-    : IRequestHandler<GetMapModelQuery, Result<string>>
+    : IRequestHandler<GetMapModelQuery, Result<MapModelSource>>
 {
-    public Task<Result<string>> Handle(GetMapModelQuery request, CancellationToken cancellationToken)
+    public Task<Result<MapModelSource>> Handle(GetMapModelQuery request, CancellationToken cancellationToken)
     {
-        var path = mapAssetService.GetModelPath(request.Location);
-        return Task.FromResult(path is not null
-            ? Result<string>.Success(path)
-            : Result<string>.Failure("Модель локации не найдена."));
+        var source = mapAssetService.GetModelSource(request.Location);
+        return Task.FromResult(source is not null
+            ? Result<MapModelSource>.Success(source)
+            : Result<MapModelSource>.Failure("Модель локации не найдена."));
     }
 }

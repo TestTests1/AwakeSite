@@ -1,6 +1,8 @@
+using Awake.Application.Common.Interfaces;
 using Awake.Infrastructure.ExternalServices.Maps;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Moq;
 
 namespace Awake.Unit.Tests.Infrastructure;
@@ -21,11 +23,16 @@ public class MapAssetServiceTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private MapAssetService BuildService()
+    private MapAssetService BuildService(string? baseUrl = null)
     {
         var env = new Mock<IWebHostEnvironment>();
         env.SetupGet(e => e.ContentRootPath).Returns(_root);
-        return new MapAssetService(env.Object);
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["MapAssets:BaseUrl"] = baseUrl })
+            .Build();
+
+        return new MapAssetService(env.Object, configuration);
     }
 
     private string CreateModel(string fileName)
@@ -39,25 +46,27 @@ public class MapAssetServiceTests : IDisposable
     [InlineData("hvoiny")]
     [InlineData("small_berdovka")]
     [InlineData("nizina")]
-    public void GetModelPath_KnownLocationWithFile_ReturnsPath(string location)
+    public void GetModelSource_KnownLocationWithFile_ReturnsPath(string location)
     {
         var expected = CreateModel($"{location}.glb");
 
-        BuildService().GetModelPath(location).Should().Be(expected);
+        BuildService().GetModelSource(location)
+            .Should().BeOfType<MapModelSource.LocalFile>()
+            .Which.Path.Should().Be(expected);
     }
 
     [Fact]
-    public void GetModelPath_KnownLocationWithoutFile_ReturnsNull()
+    public void GetModelSource_KnownLocationWithoutFile_ReturnsNull()
     {
-        BuildService().GetModelPath("hvoiny").Should().BeNull();
+        BuildService().GetModelSource("hvoiny").Should().BeNull();
     }
 
     [Fact]
-    public void GetModelPath_UnknownLocation_ReturnsNull()
+    public void GetModelSource_UnknownLocation_ReturnsNull()
     {
         CreateModel("pripyat.glb");
 
-        BuildService().GetModelPath("pripyat").Should().BeNull();
+        BuildService().GetModelSource("pripyat").Should().BeNull();
     }
 
     [Theory]
@@ -67,16 +76,71 @@ public class MapAssetServiceTests : IDisposable
     [InlineData("hvoiny/../../appsettings")]
     [InlineData("C:\\Windows\\win")]
     [InlineData("")]
-    public void GetModelPath_PathTraversalAttempt_ReturnsNull(string location)
+    public void GetModelSource_PathTraversalAttempt_ReturnsNull(string location)
     {
-        BuildService().GetModelPath(location).Should().BeNull();
+        BuildService().GetModelSource(location).Should().BeNull();
     }
 
     [Fact]
-    public void GetModelPath_IsCaseInsensitive()
+    public void GetModelSource_IsCaseInsensitive()
     {
         var expected = CreateModel("hvoiny.glb");
 
-        BuildService().GetModelPath("HVOINY").Should().Be(expected);
+        BuildService().GetModelSource("HVOINY")
+            .Should().BeOfType<MapModelSource.LocalFile>()
+            .Which.Path.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetModelSource_WithBaseUrl_ReturnsRemoteUrl()
+    {
+        BuildService("https://models.example.com/maps/v1").GetModelSource("nizina")
+            .Should().BeOfType<MapModelSource.RemoteUrl>()
+            .Which.Url.Should().Be("https://models.example.com/maps/v1/nizina.glb");
+    }
+
+    [Fact]
+    public void GetModelSource_WithBaseUrl_DoesNotNeedLocalFile()
+    {
+        // на боевом моделей рядом с приложением нет вовсе — в этом весь смысл
+        BuildService("https://models.example.com").GetModelSource("hvoiny")
+            .Should().BeOfType<MapModelSource.RemoteUrl>();
+    }
+
+    [Fact]
+    public void GetModelSource_WithBaseUrl_UsesCanonicalName()
+    {
+        // имя для адреса берётся из белого списка, а не из запроса
+        BuildService("https://models.example.com").GetModelSource("NIZINA")
+            .Should().BeOfType<MapModelSource.RemoteUrl>()
+            .Which.Url.Should().EndWith("/nizina.glb");
+    }
+
+    [Theory]
+    [InlineData("https://models.example.com/")]
+    [InlineData("https://models.example.com")]
+    public void GetModelSource_BaseUrlSlashIsNormalised(string baseUrl)
+    {
+        BuildService(baseUrl).GetModelSource("nizina")
+            .Should().BeOfType<MapModelSource.RemoteUrl>()
+            .Which.Url.Should().Be("https://models.example.com/nizina.glb");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetModelSource_BlankBaseUrl_FallsBackToDisk(string baseUrl)
+    {
+        var expected = CreateModel("nizina.glb");
+
+        BuildService(baseUrl).GetModelSource("nizina")
+            .Should().BeOfType<MapModelSource.LocalFile>()
+            .Which.Path.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetModelSource_WithBaseUrl_StillRejectsUnknownLocation()
+    {
+        BuildService("https://models.example.com").GetModelSource("../secrets").Should().BeNull();
     }
 }

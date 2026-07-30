@@ -25,6 +25,8 @@ builder.Services.AddCorsPolicies(builder.Configuration);
 // 3. SignalR
 builder.Services.AddSignalR();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+// присутствие на картах живёт в памяти процесса, поэтому синглтон
+builder.Services.AddSingleton<IWorldPresence, WorldPresence>();
 
 // 4. Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -46,6 +48,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<WorldHub>("/hubs/world");
 
 if (app.Environment.IsDevelopment())
 {
@@ -63,7 +66,34 @@ await using (var scope = app.Services.CreateAsyncScope())
 // 8. Auto-register Discord slash commands on startup
 await RegisterDiscordCommandsAsync(app);
 
+// 9. Модели локаций: в образ они не входят, поэтому без адреса хранилища вкладка
+// «Мир» просто отдаёт 404. Ошибка тихая и всплывает только у игрока, так что
+// говорим о ней сразу при старте.
+WarnIfMapAssetsUnavailable(app);
+
 app.Run();
+
+static void WarnIfMapAssetsUnavailable(WebApplication app)
+{
+    var config = app.Services.GetRequiredService<IConfiguration>();
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+
+    if (!string.IsNullOrWhiteSpace(config["MapAssets:BaseUrl"]))
+        return;
+
+    var directory = Path.Combine(app.Environment.ContentRootPath, "MapAssets");
+    var models = Directory.Exists(directory) ? Directory.GetFiles(directory, "*.glb").Length : 0;
+    if (models > 0)
+    {
+        logger.LogInformation("Модели локаций раздаются с диска: {Count} шт. в {Directory}", models, directory);
+        return;
+    }
+
+    logger.LogWarning(
+        "Моделей локаций нет ни на диске ({Directory}), ни во внешнем хранилище: "
+        + "MapAssets:BaseUrl не задан. Вкладка «Мир» будет отвечать 404.",
+        directory);
+}
 
 // ── Discord command registration ─────────────────────────────────────────────
 

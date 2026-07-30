@@ -78,7 +78,12 @@
     "title": "Boosts",
     "myTitle": "Needed boosts",
     "myHint": "Mark the buffs you need for clan wars — officers and clan members will see them",
-    "types": { "0": "Damage", "1": "Short damage", "2": "Speed", "3": "Defense" },
+    "types": {
+      "0": "Damage",
+      "1": "Short damage",
+      "2": "Speed",
+      "3": "Defense"
+    },
     "searchPlaceholder": "Find an item…",
     "totals": "Total needed",
     "player": "Player",
@@ -92,12 +97,31 @@
     "loadError": "Failed to load the 3D model",
     "noWebgl": "Your browser doesn't support WebGL — the 3D map is unavailable",
     "orbitHint": "LMB to orbit, RMB to pan, wheel to zoom",
+    "walk": "Walk the map",
+    "walkHint": "WASD to move, Shift to run, Space to jump, V for view, F to fly, B to build, Esc to exit",
+    "buildHint": "LMB place, RMB remove, wheel to pick, R to rotate, B to exit · placed: {{count}}",
+    "flyOn": "Fly",
+    "flyOff": "Land",
+    "flyHint": "Flight: WASD to fly, Space up, C down, Shift faster, V for view, F to land",
     "close": "Close map",
     "cancel": "Cancel loading",
+    "software": {
+      "title": "Your browser is rendering the map without the GPU",
+      "body": "All graphics are being computed by the CPU right now — the map will run several times slower and may stutter even on a powerful machine. Enable hardware acceleration in your browser settings and restart it.",
+      "chrome": "Chrome, Brave, Opera: Settings → System → \"Use graphics acceleration when available\"",
+      "edge": "Edge: Settings → System and performance → \"Use graphics acceleration when available\"",
+      "detected": "Detected adapter: {{name}}"
+    },
     "maps": {
       "hvoiny": "Hvoiny",
       "small_berdovka": "Small Berdovka",
       "nizina": "Nizina"
+    },
+    "party": {
+      "alone": "Nobody else on the map",
+      "others": "Others on the map: {{count}}",
+      "connecting": "Connecting to the shared world…",
+      "error": "Shared world unavailable — others are not visible"
     }
   },
   "nav": {

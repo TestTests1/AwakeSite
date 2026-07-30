@@ -27,6 +27,23 @@ public static class ServiceCollectionExtensions
                     IssuerSigningKey = new SymmetricSecurityKey(
                         Encoding.UTF8.GetBytes(configuration["Jwt:Secret"]!))
                 };
+
+                // WebSocket не умеет слать заголовки, поэтому клиент SignalR
+                // кладёт токен в параметр запроса access_token. Без этого
+                // обработчика [Authorize] на хабах не проходит вовсе, а на
+                // клиенте ошибка выглядит просто как несостоявшееся соединение.
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        var token = context.Request.Query["access_token"];
+                        var path = context.HttpContext.Request.Path;
+                        if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
+                            context.Token = token;
+
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         services.AddAuthorization();

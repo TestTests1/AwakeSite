@@ -18,6 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PlayerInventoryItem> PlayerInventoryItems => Set<PlayerInventoryItem>();
     public DbSet<PlayerBuildProof> PlayerBuildProofs => Set<PlayerBuildProof>();
     public DbSet<PlayerBoostRequest> PlayerBoostRequests => Set<PlayerBoostRequest>();
+    public DbSet<MapLayout> MapLayouts => Set<MapLayout>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

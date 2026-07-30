@@ -12,20 +12,35 @@ public class GetMapModelQueryHandlerTests
     private GetMapModelQueryHandler BuildHandler() => new(_assets.Object);
 
     [Fact]
-    public async Task Handle_ModelExists_ReturnsSuccessWithPath()
+    public async Task Handle_LocalModel_ReturnsSuccessWithPath()
     {
-        _assets.Setup(s => s.GetModelPath("hvoiny")).Returns(@"C:\app\MapAssets\hvoiny.glb");
+        _assets.Setup(s => s.GetModelSource("hvoiny"))
+            .Returns(new MapModelSource.LocalFile(@"C:\app\MapAssets\hvoiny.glb"));
 
         var result = await BuildHandler().Handle(new GetMapModelQuery("hvoiny"), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(@"C:\app\MapAssets\hvoiny.glb");
+        result.Value.Should().BeOfType<MapModelSource.LocalFile>()
+            .Which.Path.Should().Be(@"C:\app\MapAssets\hvoiny.glb");
+    }
+
+    [Fact]
+    public async Task Handle_RemoteModel_ReturnsSuccessWithUrl()
+    {
+        _assets.Setup(s => s.GetModelSource("nizina"))
+            .Returns(new MapModelSource.RemoteUrl("https://models.example.com/nizina.glb"));
+
+        var result = await BuildHandler().Handle(new GetMapModelQuery("nizina"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeOfType<MapModelSource.RemoteUrl>()
+            .Which.Url.Should().Be("https://models.example.com/nizina.glb");
     }
 
     [Fact]
     public async Task Handle_ModelMissing_ReturnsFailure()
     {
-        _assets.Setup(s => s.GetModelPath(It.IsAny<string>())).Returns((string?)null);
+        _assets.Setup(s => s.GetModelSource(It.IsAny<string>())).Returns((MapModelSource?)null);
 
         var result = await BuildHandler().Handle(new GetMapModelQuery("hvoiny"), CancellationToken.None);
 
@@ -36,7 +51,7 @@ public class GetMapModelQueryHandlerTests
     [Fact]
     public async Task Handle_UnknownLocation_ReturnsFailure()
     {
-        _assets.Setup(s => s.GetModelPath("pripyat")).Returns((string?)null);
+        _assets.Setup(s => s.GetModelSource("pripyat")).Returns((MapModelSource?)null);
 
         var result = await BuildHandler().Handle(new GetMapModelQuery("pripyat"), CancellationToken.None);
 
@@ -46,10 +61,11 @@ public class GetMapModelQueryHandlerTests
     [Fact]
     public async Task Handle_PassesLocationThroughUnchanged()
     {
-        _assets.Setup(s => s.GetModelPath(It.IsAny<string>())).Returns("path");
+        _assets.Setup(s => s.GetModelSource(It.IsAny<string>()))
+            .Returns(new MapModelSource.LocalFile("path"));
 
         await BuildHandler().Handle(new GetMapModelQuery("nizina"), CancellationToken.None);
 
-        _assets.Verify(s => s.GetModelPath("nizina"), Times.Once);
+        _assets.Verify(s => s.GetModelSource("nizina"), Times.Once);
     }
 }

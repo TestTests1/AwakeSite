@@ -45,6 +45,47 @@ namespace Awake.Infrastructure.Persistence.Migrations
                     b.ToTable("DiscordGuildSettings");
                 });
 
+            modelBuilder.Entity("Awake.Domain.Entities.MapLayout", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("Props")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("Location");
+
+                    b.HasIndex("Location", "Name")
+                        .IsUnique();
+
+                    b.ToTable("MapLayouts");
+                });
+
             modelBuilder.Entity("Awake.Domain.Entities.Notification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -519,6 +560,17 @@ namespace Awake.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Awake.Domain.Entities.MapLayout", b =>
+                {
+                    b.HasOne("Awake.Domain.Entities.User", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
                 });
 
             modelBuilder.Entity("Awake.Domain.Entities.PlayerBoostRequest", b =>
