@@ -1,0 +1,13 @@
+{
+  "name": "awake-map-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Стадии конвейера карт на Node: очистка заглушек и опыт с нарезкой тайлов",
+  "type": "module",
+  "dependencies": {
+    "@gltf-transform/core": "^4.4.2",
+    "@gltf-transform/extensions": "^4.4.2",
+    "@gltf-transform/functions": "^4.4.2",
+    "meshoptimizer": "^1.2.0"
+  }
+}
