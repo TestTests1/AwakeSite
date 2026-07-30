@@ -23,7 +23,7 @@ Pages.
 ## Переменные сервиса API
 
 ```
-ConnectionStrings__Postgres=Host=${{Postgres.RAILWAY_PRIVATE_DOMAIN}};Port=5432;Database=${{Postgres.PGDATABASE}};Username=${{Postgres.PGUSER}};Password=${{Postgres.PGPASSWORD}}
+ConnectionStrings__Postgres=${{Postgres.DATABASE_URL}}
 Jwt__Secret=<не тот, что на стенде>
 Discord__BotToken=
 Discord__ApplicationId=
@@ -42,14 +42,24 @@ PlayerData__FlareSolverrUrl=http://${{FlareSolverr.RAILWAY_PRIVATE_DOMAIN}}:8191
 `Postgres` в ссылках — **имя сервиса базы в вашем проекте**. Если Railway назвал
 его иначе, ссылка не разрешится и строка приедет пустой.
 
-**`DATABASE_URL` подставлять нельзя.** Railway отдаёт его ссылкой вида
-`postgresql://пользователь:пароль@хост:порт/база`, а Npgsql принимает только
-запись из пар «ключ=значение». Поэтому строка собирается из отдельных переменных.
+### Формат строки подключения
 
-Хост берётся внутренний: база и API в одном проекте, а трафик через внешний
-TCP-прокси (`PGHOST`/`PGPORT`) тарифицируется как исходящий. Если по внутреннему
-имени соединение не поднимается, запасной вариант — публичный хост, но тогда
-нужно добавить `SSL Mode=Require;Trust Server Certificate=true`.
+Приложение принимает оба вида:
+
+- ссылку `postgresql://пользователь:пароль@хост:порт/база`, как её отдают
+  `DATABASE_URL` и `DATABASE_PUBLIC_URL`;
+- обычную запись из пар «ключ=значение», как на стенде и в docker-compose.
+
+Сам Npgsql ссылки не понимает, разбор делает `PostgresConnectionString.Normalize`.
+Пароль раскодируется по правилам URL, `sslmode` из запроса переносится, а при
+`require` включается доверие сертификату — у хостингов он самоподписанный.
+
+Поэтому достаточно сослаться на одну переменную. Собирать строку из четырёх
+(`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`) больше не нужно, хотя и можно.
+
+**Берите `DATABASE_URL`, а не `DATABASE_PUBLIC_URL`.** Публичный идёт через
+внешний TCP-прокси, и этот трафик тарифицируется как исходящий, плюс задержка
+выше. База и API в одном проекте, ходить наружу им незачем.
 
 ## Миграции
 

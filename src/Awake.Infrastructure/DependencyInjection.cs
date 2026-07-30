@@ -35,7 +35,9 @@ public static class DependencyInjection
                 "переменной окружения). Как её собрать на Railway — docs/deploy-railway.md.");
         }
 
-        services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(connectionString));
+        // принимаем и ссылку postgresql://…, какой её отдают хостинги
+        services.AddDbContext<AppDbContext>(opt =>
+            opt.UseNpgsql(PostgresConnectionString.Normalize(connectionString)));
 
         // Repositories
         services.AddScoped<IUserRepository, UserRepository>();

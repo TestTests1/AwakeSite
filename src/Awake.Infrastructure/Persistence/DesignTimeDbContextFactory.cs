@@ -16,7 +16,8 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .Build();
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        optionsBuilder.UseNpgsql(configuration.GetConnectionString("Postgres"));
+        optionsBuilder.UseNpgsql(
+            PostgresConnectionString.Normalize(configuration.GetConnectionString("Postgres") ?? ""));
 
         return new AppDbContext(optionsBuilder.Options);
     }
