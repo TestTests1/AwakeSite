@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
 import { optimizeMaterials } from './optimizeMaterials'
+import { assetUrl } from './assets'
 
 /**
  * Модель игрока.
@@ -45,7 +46,7 @@ const loader = new GLTFLoader()
 let request: Promise<AvatarSource> | null = null
 
 export function loadAvatar(): Promise<AvatarSource> {
-  request ??= loader.loadAsync('/avatars/v1.glb').then((gltf) => {
+  request ??= loader.loadAsync(assetUrl('/avatars/v1.glb')).then((gltf) => {
     // У двух материалов модели metallicFactor не задан, а по спецификации glTF
     // это единица. Полностью металлическая поверхность без карты окружения под
     // обычными источниками света выглядит почти чёрной — и персонаж выходил

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { assetUrl } from './assets'
 
 /**
  * Заграждения из клановых турниров.
@@ -61,7 +62,7 @@ export function loadProp(kind: PropKind): Promise<THREE.Group> {
   const known = cache.get(kind.id)
   if (known) return known
 
-  const request = loader.loadAsync(`/props/${kind.file}.glb`).then((gltf) => {
+  const request = loader.loadAsync(assetUrl(`/props/${kind.file}.glb`)).then((gltf) => {
     const model = gltf.scene
     model.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return
