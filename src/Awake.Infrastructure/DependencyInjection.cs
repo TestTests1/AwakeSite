@@ -22,8 +22,20 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         // Database
-        services.AddDbContext<AppDbContext>(opt =>
-            opt.UseNpgsql(configuration.GetConnectionString("Postgres")));
+        //
+        // Пустую строку подключения ловим здесь, а не оставляем Npgsql: он падает
+        // уже на миграциях, стеком в пятнадцать строк и сообщением про «сервер ''»,
+        // по которому не догадаться, что дело просто в незаданной переменной.
+        var connectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException(
+                "Строка подключения к базе пуста. Задайте ConnectionStrings__Postgres " +
+                "(двойное подчёркивание — это запись ConnectionStrings:Postgres в виде " +
+                "переменной окружения). Как её собрать на Railway — docs/deploy-railway.md.");
+        }
+
+        services.AddDbContext<AppDbContext>(opt => opt.UseNpgsql(connectionString));
 
         // Repositories
         services.AddScoped<IUserRepository, UserRepository>();
