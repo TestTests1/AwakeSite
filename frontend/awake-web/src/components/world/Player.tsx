@@ -49,6 +49,9 @@ export interface PlayerProps {
   placed?: PlacedProp[]
   /** Камера за спиной — тогда собственную фигуру видно. */
   thirdPerson?: boolean
+  /** Обзор мышью. Выключается, когда поверх игры открыто меню: иначе клик по
+      его кнопке тут же увёл бы курсор обратно в игру. */
+  look?: boolean
   /**
    * Живое состояние персонажа, обновляется каждый кадр.
    *
@@ -75,11 +78,12 @@ export function Player({
   flying = false,
   placed = [],
   thirdPerson = false,
+  look = true,
   state,
 }: PlayerProps) {
   const camera = useThree((state) => state.camera)
   const keys = useKeyboard()
-  usePointerLook(true)
+  usePointerLook(look)
 
   const collider = useMemo(() => new TerrainCollider(scene), [scene])
   useEffect(() => () => collider.dispose(), [collider])

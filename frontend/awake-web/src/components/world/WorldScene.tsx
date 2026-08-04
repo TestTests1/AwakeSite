@@ -134,6 +134,7 @@ export function WorldScene({
   const locked = usePointerLocked()
   const [report, setReport] = useState<RenderReport | null>(null)
   const [flying, setFlying] = useState(false)
+  const [menu, setMenu] = useState(false)
 
   /**
    * Состояние персонажа идёт в ref, а не в состояние React: обновление по
@@ -220,6 +221,12 @@ export function WorldScene({
       // нажатий в секунду, и режим начинает мигать между полётом и ходьбой —
       // персонаж при этом дёргается и уезжает сам по себе
       if (event.repeat) return
+      // Esc открывает и закрывает меню. Снятие захвата курсора при этом делает
+      // сам браузер, независимо от нас, — поэтому здесь только переключение.
+      if (event.code === 'Escape') setMenu((value) => !value)
+      // при открытом меню игровые клавиши молчат: иначе набор в поле имени
+      // расстановки переключал бы полёт и стройку
+      if (menu) return
       if (event.code === 'KeyF') setFlying((value) => !value)
       if (event.code === 'KeyB') setBuilding((value) => !value)
       if (event.code === 'KeyV') setThirdPerson((value) => !value)
@@ -236,7 +243,7 @@ export function WorldScene({
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('wheel', onWheel)
     }
-  }, [building])
+  }, [building, menu])
 
   const view = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -245,7 +252,6 @@ export function WorldScene({
     const span = Math.max(size.x, size.y, size.z)
     return {
       center: center.toArray() as [number, number, number],
-      position: [center.x, center.y + span * 0.6, center.z + span * 0.9] as [number, number, number],
       far: span * 10,
       span,
       size,
@@ -254,7 +260,7 @@ export function WorldScene({
 
   return (
     // data-mode нужен автотестам: по нему видно текущий режим, не разбирая текст
-    <div className="fixed inset-0 z-30 bg-black" data-mode={flying ? 'fly' : 'walk'}>
+    <div className="fixed inset-0 z-30 bg-black" data-mode={menu ? 'menu' : flying ? 'fly' : 'walk'}>
       {/* Камера ставится сразу на точку появления: Player доведёт её до земли
           в своём эффекте, но до первого кадра эффекты не срабатывают, и с
           обзорной позиции мелькнул бы вид издалека. */}
@@ -272,6 +278,7 @@ export function WorldScene({
           flying={flying}
           placed={placed}
           thirdPerson={thirdPerson}
+          look={!menu}
           state={playerRef}
         />
         {thirdPerson && <LocalAvatar playerRef={playerRef} />}
@@ -299,31 +306,53 @@ export function WorldScene({
         </div>
       </div>
 
-      <div className="absolute right-4 top-4 flex gap-2">
-        {onClose && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground hover:bg-secondary"
-          >
-            {t('world.close')}
-          </button>
-        )}
-      </div>
-
       {/* Прицел: без него не понять, куда смотришь. В виде от третьего лица он
           не нужен — центр экрана там не совпадает с фигурой. */}
-      {!thirdPerson && (
+      {!thirdPerson && !menu && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
       )}
 
-      {!locked && (
+      {!locked && !menu && (
         <div className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 rounded-md border border-accent/40 bg-card/90 px-4 py-2 text-sm text-accent">
           {t('world.clickToLook')}
         </div>
       )}
 
-      {location && <LayoutPanel location={location} placed={placed} onLoad={setPlaced} />}
+      {menu && (
+        <div className="absolute inset-0 z-40 flex items-start justify-center overflow-auto bg-black/70 p-6">
+          <div className="w-full max-w-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-foreground">{t('world.menu.title')}</h2>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFlying((value) => !value)}
+                  className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground hover:bg-secondary"
+                >
+                  {flying ? t('world.flyOff') : t('world.flyOn')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMenu(false)}
+                  className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-accent hover:bg-accent/20"
+                >
+                  {t('world.menu.resume')}
+                </button>
+                {onClose && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground hover:bg-secondary"
+                  >
+                    {t('world.close')}
+                  </button>
+                )}
+              </div>
+            </div>
+            {location && <LayoutPanel location={location} placed={placed} onLoad={setPlaced} />}
+          </div>
+        </div>
+      )}
 
       {location && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground">

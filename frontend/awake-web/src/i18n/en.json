@@ -97,13 +97,17 @@
     "loadError": "Failed to load the 3D model",
     "noWebgl": "Your browser doesn't support WebGL — the 3D map is unavailable",
     "clickToLook": "Click the map to look around",
-    "walkHint": "WASD to move, Shift to run, Space to jump, V for view, F to fly, B to build, Esc to exit",
+    "walkHint": "WASD to move, Shift to run, Space to jump, V for view, F to fly, B to build, Esc for menu",
     "buildHint": "LMB place, RMB remove, wheel to pick, R to rotate, B to exit · placed: {{count}}",
     "flyOn": "Fly",
     "flyOff": "Land",
     "flyHint": "Flight: WASD to fly, Space up, C down, Shift faster, V for view, F to land",
     "close": "Close map",
     "cancel": "Cancel loading",
+    "menu": {
+      "title": "Paused",
+      "resume": "Back to the map"
+    },
     "software": {
       "title": "Your browser is rendering the map without the GPU",
       "body": "All graphics are being computed by the CPU right now — the map will run several times slower and may stutter even on a powerful machine. Enable hardware acceleration in your browser settings and restart it.",
