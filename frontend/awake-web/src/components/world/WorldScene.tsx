@@ -66,6 +66,22 @@ function SkyBox() {
  * координат — она смотрела бы в пустоту за километры от карты.
  */
 /**
+ * Туман прячет стык карты с небом. Карта кончается ровным прямоугольным
+ * обрывом, а за ним на скайбоксе нарисована уходящая к горизонту земля —
+ * без тумана этот шов режет глаз.
+ *
+ * Цвет не подобран на глаз, а снят с самого скайбокса: среднее по полосе неба
+ * над горизонтом на четырёх боковых гранях. Поэтому дальние блоки растворяются
+ * ровно в тот тон, который за ними и нарисован. Сменится небо — пересчитать.
+ *
+ * Границы заданы долями размаха локации, а не в блоках: карты разного размера,
+ * и постоянное расстояние на одной было бы у самого носа, на другой — за краем.
+ */
+const FOG_COLOR = 0x8099ac
+const FOG_START = 0.45
+const FOG_END = 1.05
+
+/**
  * Собственная фигура. Рисуется только когда камера отошла за спину — иначе она
  * закрывала бы весь экран изнутри.
  */
@@ -228,6 +244,7 @@ export function WorldScene({
       center: center.toArray() as [number, number, number],
       position: [center.x, center.y + span * 0.6, center.z + span * 0.9] as [number, number, number],
       far: span * 10,
+      span,
       size,
     }
   }, [scene])
@@ -237,6 +254,7 @@ export function WorldScene({
     <div className="fixed inset-0 z-30 bg-black" data-mode={!walking ? 'orbit' : flying ? 'fly' : 'walk'}>
       <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: view.position }}>
         <SkyBox />
+        <fog attach="fog" args={[FOG_COLOR, view.span * FOG_START, view.span * FOG_END]} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[1, 2, 1]} intensity={1.4} />
         <MapModel scene={scene} />
