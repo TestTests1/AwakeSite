@@ -106,7 +106,7 @@
     "cancel": "Cancel loading",
     "menu": {
       "title": "Paused",
-      "resume": "Back to the map"
+      "resume": "Back to the game"
     },
     "software": {
       "title": "Your browser is rendering the map without the GPU",
