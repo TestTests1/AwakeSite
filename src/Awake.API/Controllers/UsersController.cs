@@ -11,7 +11,9 @@ public record UpdateRankRequest(UserRank NewRank);
 
 [ApiController]
 [Route("api/users")]
-[RankAuthorize(UserRank.Colonel)]
+// Офицер и выше: у офицера есть своя ступень повышения — до участника.
+// Кого именно он может тронуть, ограничивает UpdateUserRankCommandHandler.
+[RankAuthorize(UserRank.Officer)]
 public class UsersController(ISender sender) : ControllerBase
 {
     [HttpGet]

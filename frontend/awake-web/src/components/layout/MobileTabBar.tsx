@@ -49,7 +49,7 @@ export function MobileTabBar() {
 
   const rank = user?.rank ?? 0
   const isMemberPlus = rank >= UserRank.Member
-  const isColonelPlus = rank >= UserRank.Colonel
+  const canManageUsers = rank >= UserRank.Officer
   const tabs = isMemberPlus ? [...MEMBER_PLUS_TABS, ...BASE_TABS] : BASE_TABS
 
   function isActive(path: string) {
@@ -112,7 +112,7 @@ export function MobileTabBar() {
                 <Settings size={16} />
                 {t('nav.settings')}
               </Link>
-              {isColonelPlus && (
+              {canManageUsers && (
                 <Link
                   to="/manage/users"
                   onClick={() => setMoreOpen(false)}
