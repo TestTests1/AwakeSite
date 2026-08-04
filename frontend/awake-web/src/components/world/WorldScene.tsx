@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
 import { useTranslation } from 'react-i18next'
 import * as THREE from 'three'
 import type { MapLocation } from '@/api/maps'
@@ -60,11 +59,25 @@ function SkyBox() {
 }
 
 /**
- * Промежуточная версия для замера: свободная орбитальная камера, без физики и
- * персонажа. Модели лежат в реальных мировых координатах локации (например,
- * X ~3840, Z ~-2072 у «Хвойного»), поэтому камеру нельзя оставлять в начале
- * координат — она смотрела бы в пустоту за километры от карты.
+ * Получен ли захват курсора.
+ *
+ * Браузер не выдаёт его без явного жеста, а входим мы теперь сразу от первого
+ * лица — без клика. Клавиши при этом работают, а мышь нет, и без подсказки это
+ * выглядит поломкой. Захват восстанавливается кликом по холсту, этим занят
+ * usePointerLook.
  */
+function usePointerLocked(): boolean {
+  const [locked, setLocked] = useState(() => document.pointerLockElement !== null)
+
+  useEffect(() => {
+    const update = () => setLocked(document.pointerLockElement !== null)
+    document.addEventListener('pointerlockchange', update)
+    return () => document.removeEventListener('pointerlockchange', update)
+  }, [])
+
+  return locked
+}
+
 /**
  * Туман прячет стык карты с небом. Карта кончается ровным прямоугольным
  * обрывом, а за ним на скайбоксе нарисована уходящая к горизонту земля —
@@ -118,8 +131,8 @@ export function WorldScene({
   onClose?: () => void
 }) {
   const { t } = useTranslation()
+  const locked = usePointerLocked()
   const [report, setReport] = useState<RenderReport | null>(null)
-  const [walking, setWalking] = useState(false)
   const [flying, setFlying] = useState(false)
 
   /**
@@ -170,18 +183,12 @@ export function WorldScene({
     placedRef.current = placed
   }, [placed])
 
-  const stopWalking = useCallback(() => {
-    setWalking(false)
-    setFlying(false)
-    setBuilding(false)
-  }, [])
-
-  // Совместное присутствие включается вместе с режимом ходьбы: до него у игрока
-  // просто нет положения, и остальные видели бы его фигуру в начале координат.
+  // Совместное присутствие теперь включено с самого начала: обзорного режима
+  // без персонажа больше нет, а значит нет и момента, когда позиции ещё нет.
   const { players, state: connection, place, remove } = useWorldSession(
     location,
     playerRef,
-    walking,
+    true,
     placedRef,
     {
       onSnapshot: setPlaced,
@@ -208,7 +215,6 @@ export function WorldScene({
   )
 
   useEffect(() => {
-    if (!walking) return
     function onKey(event: KeyboardEvent) {
       // event.repeat обязателен: с зажатой клавишей автоповтор шлёт десятки
       // нажатий в секунду, и режим начинает мигать между полётом и ходьбой —
@@ -217,9 +223,6 @@ export function WorldScene({
       if (event.code === 'KeyF') setFlying((value) => !value)
       if (event.code === 'KeyB') setBuilding((value) => !value)
       if (event.code === 'KeyV') setThirdPerson((value) => !value)
-      // Esc заодно снимает захват курсора силами браузера, но выход из режима
-      // решается здесь, а не по факту потери курсора
-      if (event.code === 'Escape') stopWalking()
     }
     // колесо перебирает заграждения: цифровые клавиши заняты отладкой
     function onWheel(event: WheelEvent) {
@@ -233,7 +236,7 @@ export function WorldScene({
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('wheel', onWheel)
     }
-  }, [walking, building, stopWalking])
+  }, [building])
 
   const view = useMemo(() => {
     const box = new THREE.Box3().setFromObject(scene)
@@ -251,8 +254,11 @@ export function WorldScene({
 
   return (
     // data-mode нужен автотестам: по нему видно текущий режим, не разбирая текст
-    <div className="fixed inset-0 z-30 bg-black" data-mode={!walking ? 'orbit' : flying ? 'fly' : 'walk'}>
-      <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: view.position }}>
+    <div className="fixed inset-0 z-30 bg-black" data-mode={flying ? 'fly' : 'walk'}>
+      {/* Камера ставится сразу на точку появления: Player доведёт её до земли
+          в своём эффекте, но до первого кадра эффекты не срабатывают, и с
+          обзорной позиции мелькнул бы вид издалека. */}
+      <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: spawn ?? view.center }}>
         <SkyBox />
         <fog attach="fog" args={[FOG_COLOR, view.span * FOG_START, view.span * FOG_END]} />
         <ambientLight intensity={0.7} />
@@ -260,74 +266,41 @@ export function WorldScene({
         <MapModel scene={scene} />
         <PlacedProps placed={placed} />
         <RemoteAvatars players={players} />
-        {walking ? (
-          <>
-            <Player
-              scene={scene}
-              spawn={spawn}
-              flying={flying}
-              placed={placed}
-              thirdPerson={thirdPerson}
-              state={playerRef}
-            />
-            {thirdPerson && <LocalAvatar playerRef={playerRef} />}
-            {building && (
-              <Builder
-                scene={scene}
-                placed={placed}
-                kindIndex={kindIndex}
-                rotation={rotation}
-                onPlace={placeProp}
-                onRemove={dropProp}
-                onRotate={rotate}
-              />
-            )}
-          </>
-        ) : (
-          <OrbitControls target={view.center} makeDefault />
+        <Player
+          scene={scene}
+          spawn={spawn}
+          flying={flying}
+          placed={placed}
+          thirdPerson={thirdPerson}
+          state={playerRef}
+        />
+        {thirdPerson && <LocalAvatar playerRef={playerRef} />}
+        {building && (
+          <Builder
+            scene={scene}
+            placed={placed}
+            kindIndex={kindIndex}
+            rotation={rotation}
+            onPlace={placeProp}
+            onRemove={dropProp}
+            onRotate={rotate}
+          />
         )}
         <RenderStats onReport={setReport} />
         <RenderTuning scene={scene} />
       </Canvas>
 
-      <RenderStatsOverlay report={report} playerRef={walking ? playerRef : undefined} />
+      <RenderStatsOverlay report={report} playerRef={playerRef} />
 
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground">
-        {!walking ? t('world.orbitHint') : flying ? t('world.flyHint') : t('world.walkHint')}
+        {flying ? t('world.flyHint') : t('world.walkHint')}
         <div className="mt-1 font-mono">
           {Math.round(view.size.x)} × {Math.round(view.size.y)} × {Math.round(view.size.z)}
         </div>
       </div>
 
       <div className="absolute right-4 top-4 flex gap-2">
-        {/* Кнопки только вне режима ходьбы: под захватом курсора мышь
-            принадлежит холсту, и кликнуть по ним всё равно нельзя — внутри
-            режимы переключаются клавишей F, выход Esc. */}
-        {!walking && (
-          <>
-            <button
-              type="button"
-              onClick={() => {
-                setFlying(false)
-                setWalking(true)
-              }}
-              className="rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-xs text-accent hover:bg-accent/20"
-            >
-              {t('world.walk')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFlying(true)
-                setWalking(true)
-              }}
-              className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground hover:bg-secondary"
-            >
-              {t('world.flyOn')}
-            </button>
-          </>
-        )}
-        {onClose && !walking && (
+        {onClose && (
           <button
             type="button"
             onClick={onClose}
@@ -338,17 +311,21 @@ export function WorldScene({
         )}
       </div>
 
-      {/* Прицел: без него в режиме ходьбы не понять, куда смотришь. В виде от
-          третьего лица он не нужен — центр экрана там не совпадает с фигурой. */}
-      {walking && !thirdPerson && (
+      {/* Прицел: без него не понять, куда смотришь. В виде от третьего лица он
+          не нужен — центр экрана там не совпадает с фигурой. */}
+      {!thirdPerson && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70" />
       )}
 
-      {!walking && location && (
-        <LayoutPanel location={location} placed={placed} onLoad={setPlaced} />
+      {!locked && (
+        <div className="pointer-events-none absolute left-1/2 top-1/3 -translate-x-1/2 rounded-md border border-accent/40 bg-card/90 px-4 py-2 text-sm text-accent">
+          {t('world.clickToLook')}
+        </div>
       )}
 
-      {walking && location && (
+      {location && <LayoutPanel location={location} placed={placed} onLoad={setPlaced} />}
+
+      {location && (
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground">
           {connection === 'connecting' && t('world.party.connecting')}
           {connection === 'error' && t('world.party.error')}
@@ -359,7 +336,7 @@ export function WorldScene({
         </div>
       )}
 
-      {walking && building && (
+      {building && (
         <div className="pointer-events-none absolute inset-x-0 bottom-6 flex flex-col items-center gap-2">
           <div className="flex gap-2">
             {PROP_KINDS.map((kind, index) => (
