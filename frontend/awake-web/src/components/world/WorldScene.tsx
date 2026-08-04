@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { useTranslation } from 'react-i18next'
 import * as THREE from 'three'
 import type { MapLocation } from '@/api/maps'
 import { loadAvatar } from '@/lib/avatar'
+import { loadSky } from '@/lib/sky'
 import { loadPlaced, PROP_KINDS, savePlaced, type PlacedProp } from '@/lib/props'
 import { Avatar, useAvatarSource, type AvatarSample } from './Avatar'
 import { Builder, PlacedProps } from './Builder'
@@ -20,6 +21,43 @@ import {
 } from './RenderStats'
 import { RenderTuning } from './RenderTuning'
 import { useWorldSession } from './useWorldSession'
+
+/**
+ * Небо ставится фоном сцены, а не отдельной моделью: фон рисуется без глубины
+ * и не мешает ни отсечению, ни лучам столкновений.
+ *
+ * Грузится отдельно от карты и заметно раньше неё — двести с небольшим
+ * килобайт против сотен мегабайт. Пока не приехало, фон остаётся чёрным.
+ */
+function SkyBox() {
+  const scene = useThree((state) => state.scene)
+
+  useEffect(() => {
+    let cancelled = false
+    let texture: THREE.CubeTexture | null = null
+
+    void loadSky()
+      .then((loaded) => {
+        if (cancelled) {
+          loaded.dispose()
+          return
+        }
+        texture = loaded
+        scene.background = loaded
+      })
+      .catch(() => {
+        // без неба мир остаётся проходимым, просто фон чёрный как раньше
+      })
+
+    return () => {
+      cancelled = true
+      scene.background = null
+      texture?.dispose()
+    }
+  }, [scene])
+
+  return null
+}
 
 /**
  * Промежуточная версия для замера: свободная орбитальная камера, без физики и
@@ -198,6 +236,7 @@ export function WorldScene({
     // data-mode нужен автотестам: по нему видно текущий режим, не разбирая текст
     <div className="fixed inset-0 z-30 bg-black" data-mode={!walking ? 'orbit' : flying ? 'fly' : 'walk'}>
       <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: view.position }}>
+        <SkyBox />
         <ambientLight intensity={0.7} />
         <directionalLight position={[1, 2, 1]} intensity={1.4} />
         <MapModel scene={scene} />
