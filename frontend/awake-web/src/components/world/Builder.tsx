@@ -27,6 +27,9 @@ export interface BuilderProps {
   onRemove: (id: string) => void
   onRotate: (delta: number) => void
   rotation: number
+  /** Стройка принимает клавиши. Выключается при открытом меню — иначе набор
+      имени расстановки клавишей "к" (физически KeyR) крутил бы заграждение. */
+  active?: boolean
 }
 
 const snap = (value: number) => Math.round(value / GRID) * GRID
@@ -126,6 +129,7 @@ export function Builder({
   onRemove,
   onRotate,
   rotation,
+  active = true,
 }: BuilderProps) {
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
@@ -215,6 +219,7 @@ export function Builder({
     }
     function onKey(event: KeyboardEvent) {
       if (event.repeat) return
+      if (!active) return
       if (event.code === 'KeyR') onRotate(event.shiftKey ? -ROTATION_STEP : ROTATION_STEP)
     }
     // правая кнопка под захватом курсора всё равно шлёт contextmenu
@@ -230,7 +235,7 @@ export function Builder({
       element.removeEventListener('contextmenu', onContextMenu)
       window.removeEventListener('keydown', onKey)
     }
-  }, [gl, place, removeNearest, onRotate])
+  }, [gl, place, removeNearest, onRotate, active])
 
   const ghostModel = useMemo(() => {
     const source = models.get(kind.id)

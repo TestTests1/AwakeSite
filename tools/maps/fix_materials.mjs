@@ -45,7 +45,7 @@
  * rebuild_map.py. Повторный запуск безопасен: цвет просто выставится тот же.
  *
  * Запуск (из tools/maps, там node_modules):
- *   node fix_placeholders.mjs <папка с тайлами> [--dry]
+ *   node fix_materials.mjs <папка с тайлами> [--dry]
  */
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';

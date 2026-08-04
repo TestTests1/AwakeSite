@@ -49,9 +49,16 @@ export interface PlayerProps {
   placed?: PlacedProp[]
   /** Камера за спиной — тогда собственную фигуру видно. */
   thirdPerson?: boolean
-  /** Обзор мышью. Выключается, когда поверх игры открыто меню: иначе клик по
-      его кнопке тут же увёл бы курсор обратно в игру. */
-  look?: boolean
+  /**
+   * Персонаж принимает ввод: и мышь, и клавиатуру движения/прыжка.
+   *
+   * Выключается, когда поверх игры открыто меню — иначе клик по его кнопке
+   * увёл бы курсор обратно в игру, а набор имени расстановки физическими
+   * клавишами (WASD под любой раскладкой) двигал бы и разворачивал персонажа
+   * прямо во время печати. Гравитация и падение при этом продолжают
+   * работать — иначе персонаж завис бы в воздухе на глазах у остальных.
+   */
+  active?: boolean
   /**
    * Живое состояние персонажа, обновляется каждый кадр.
    *
@@ -78,12 +85,12 @@ export function Player({
   flying = false,
   placed = [],
   thirdPerson = false,
-  look = true,
+  active = true,
   state,
 }: PlayerProps) {
   const camera = useThree((state) => state.camera)
   const keys = useKeyboard()
-  usePointerLook(look)
+  usePointerLook(active)
 
   const collider = useMemo(() => new TerrainCollider(scene), [scene])
   useEffect(() => () => collider.dispose(), [collider])
@@ -159,7 +166,10 @@ export function Player({
     // после переключения вкладки delta бывает в секунды — за такой шаг можно
     // проскочить сквозь стену
     const delta = Math.min(rawDelta, 0.05)
-    const boost = keys.has('ShiftLeft') || keys.has('ShiftRight')
+    // При открытом меню клавиши перемещения и прыжка не читаем: это физические
+    // коды клавиш (event.code), и набор русского имени расстановки в поле
+    // ввода нажимает ровно WASD, пробел и другие игровые клавиши.
+    const boost = active && (keys.has('ShiftLeft') || keys.has('ShiftRight'))
 
     /**
      * Общий хвост кадра: разворот фигуры, камера и публикация состояния.
@@ -215,12 +225,14 @@ export function Player({
       right.current.crossVectors(forward.current, camera.up).normalize()
 
       step.current.set(0, 0, 0)
-      if (keys.has('KeyW') || keys.has('ArrowUp')) step.current.add(forward.current)
-      if (keys.has('KeyS') || keys.has('ArrowDown')) step.current.sub(forward.current)
-      if (keys.has('KeyD') || keys.has('ArrowRight')) step.current.add(right.current)
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) step.current.sub(right.current)
-      if (keys.has('Space')) step.current.y += 1
-      if (keys.has('KeyC') || keys.has('ControlLeft')) step.current.y -= 1
+      if (active) {
+        if (keys.has('KeyW') || keys.has('ArrowUp')) step.current.add(forward.current)
+        if (keys.has('KeyS') || keys.has('ArrowDown')) step.current.sub(forward.current)
+        if (keys.has('KeyD') || keys.has('ArrowRight')) step.current.add(right.current)
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) step.current.sub(right.current)
+        if (keys.has('Space')) step.current.y += 1
+        if (keys.has('KeyC') || keys.has('ControlLeft')) step.current.y -= 1
+      }
 
       if (step.current.lengthSq() > 0) {
         step.current.normalize().multiplyScalar((boost ? FLY_BOOST : FLY_SPEED) * delta)
@@ -260,10 +272,12 @@ export function Player({
     right.current.crossVectors(forward.current, camera.up).normalize()
 
     step.current.set(0, 0, 0)
-    if (keys.has('KeyW') || keys.has('ArrowUp')) step.current.add(forward.current)
-    if (keys.has('KeyS') || keys.has('ArrowDown')) step.current.sub(forward.current)
-    if (keys.has('KeyD') || keys.has('ArrowRight')) step.current.add(right.current)
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) step.current.sub(right.current)
+    if (active) {
+      if (keys.has('KeyW') || keys.has('ArrowUp')) step.current.add(forward.current)
+      if (keys.has('KeyS') || keys.has('ArrowDown')) step.current.sub(forward.current)
+      if (keys.has('KeyD') || keys.has('ArrowRight')) step.current.add(right.current)
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) step.current.sub(right.current)
+    }
 
     if (step.current.lengthSq() > 0) {
       step.current.normalize().multiplyScalar((boost ? RUN_SPEED : WALK_SPEED) * delta)
@@ -271,8 +285,9 @@ export function Player({
       moveAxis(step.current.z, 'z')
     }
 
-    // вертикаль
-    if (grounded.current && (keys.has('Space') || keys.has('KeyE'))) {
+    // вертикаль: прыжок — тоже ввод, гасим его вместе с шагом, а не саму
+    // гравитацию ниже — иначе персонаж повис бы в воздухе при открытом меню
+    if (active && grounded.current && (keys.has('Space') || keys.has('KeyE'))) {
       velocityY.current = JUMP_SPEED
       grounded.current = false
     }

@@ -225,7 +225,9 @@ export function WorldScene({
       // сам браузер, независимо от нас, — поэтому здесь только переключение.
       if (event.code === 'Escape') setMenu((value) => !value)
       // при открытом меню игровые клавиши молчат: иначе набор в поле имени
-      // расстановки переключал бы полёт и стройку
+      // расстановки переключал бы полёт и стройку. Сам персонаж (Player) и
+      // поворот заграждения (Builder) гасят те же клавиши своим признаком
+      // active — этот же return отвечает только за клавиши самого WorldScene.
       if (menu) return
       if (event.code === 'KeyF') setFlying((value) => !value)
       if (event.code === 'KeyB') setBuilding((value) => !value)
@@ -278,7 +280,7 @@ export function WorldScene({
           flying={flying}
           placed={placed}
           thirdPerson={thirdPerson}
-          look={!menu}
+          active={!menu}
           state={playerRef}
         />
         {thirdPerson && <LocalAvatar playerRef={playerRef} />}
@@ -291,6 +293,7 @@ export function WorldScene({
             onPlace={placeProp}
             onRemove={dropProp}
             onRotate={rotate}
+            active={!menu}
           />
         )}
         <RenderStats onReport={setReport} />
