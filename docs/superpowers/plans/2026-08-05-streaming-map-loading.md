@@ -1023,6 +1023,21 @@ function distanceToChunk(entry: ChunkEntry, size: number, x: number, z: number):
   return Math.hypot(dx, dz)
 }
 
+/**
+ * Освобождает геометрию куска — и только её.
+ *
+ * Материалы и текстуры общие на всю карту: тронуть их здесь значит погасить
+ * текстуры везде разом с первого же выгруженного куска. Вызывается из четырёх
+ * мест (выгрузка по дальности, отмена после размонтирования, отмена ушедшего
+ * из круга, уборка при выходе), и в каждом ошибиться одинаково легко — поэтому
+ * одной функцией.
+ */
+function disposeChunkGeometry(chunk: THREE.Group): void {
+  chunk.traverse((object) => {
+    if (object instanceof THREE.Mesh) object.geometry.dispose()
+  })
+}
+
 export interface ChunkStream {
   /** Пришли материалы и кусок под точкой появления: можно входить в мир. */
   ready: boolean
@@ -1097,11 +1112,7 @@ export function useChunkStream({
 
         onRemove?.(chunk)
         group.remove(chunk)
-        // только геометрия: материалы общие, освобождать их здесь значит
-        // погасить текстуры на всей карте разом
-        chunk.traverse((object) => {
-          if (object instanceof THREE.Mesh) object.geometry.dispose()
-        })
+        disposeChunkGeometry(chunk)
         self.inScene.delete(id)
       }
 
@@ -1123,13 +1134,13 @@ export function useChunkStream({
           .then((chunk) => {
             self.loading.delete(id)
             if (self.stopped) {
-              chunk.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose() })
+              disposeChunkGeometry(chunk)
               return
             }
             // пока качался, игрок мог уйти — тогда кусок уже не нужен
             const at2 = playerAt()
             if (distanceToChunk(entry, manifest.chunkSize, at2.x, at2.z) > KEEP_RADIUS) {
-              chunk.traverse((o) => { if (o instanceof THREE.Mesh) o.geometry.dispose() })
+              disposeChunkGeometry(chunk)
               return
             }
             group.add(chunk)
@@ -1192,9 +1203,7 @@ export function useChunkStream({
       for (const chunk of self.inScene.values()) {
         onRemove?.(chunk)
         group.remove(chunk)
-        chunk.traverse((object) => {
-          if (object instanceof THREE.Mesh) object.geometry.dispose()
-        })
+        disposeChunkGeometry(chunk)
       }
       self.inScene.clear()
       self.loading.clear()
@@ -1345,18 +1354,13 @@ export function Player({
       } else {
         grounded.current = false
       }
-      missingGround.current = false
     } else {
       grounded.current = false
       // Опоры нет — но со стримингом это значит не «пропасть», а «кусок ещё не
       // приехал». Отличаем по высоте: настоящая пропасть начинается ниже карты,
       // а на её уровне пола просто нет. Во втором случае замираем на месте:
       // уронить игрока сквозь незагруженный пол хуже, чем задержать на миг.
-      const insideMap = feet.current.y > bounds.min.y
-      if (insideMap && !missingGround.current) {
-        missingGround.current = true
-      }
-      if (insideMap) {
+      if (feet.current.y > bounds.min.y) {
         feet.current.y = beforeGravity.current
         velocityY.current = 0
       }
@@ -1367,11 +1371,9 @@ export function Player({
     if (feet.current.y < bounds.min.y - 30) placeAtSpawn()
 ```
 
-Объявить два новых ref рядом с `grounded` (строка 110):
+Объявить новый ref рядом с `grounded` (строка 110):
 
 ```ts
-  /** Под ногами нет геометрии: кусок ещё не приехал, а не пропасть. */
-  const missingGround = useRef(false)
   /** Высота до применения гравитации в этом кадре — к ней и откатываемся. */
   const beforeGravity = useRef(0)
 ```
