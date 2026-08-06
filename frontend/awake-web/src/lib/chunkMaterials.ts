@@ -15,6 +15,12 @@ import { improveTextureFiltering } from './textureFiltering'
  */
 export interface ChunkMaterials {
   get(name: string): THREE.Material | undefined
+  /**
+   * Заглушка для меша, чьего материала нет в общем наборе. Общая для всей
+   * карты, как и все остальные материалы отсюда, — специально, чтобы у
+   * выгрузки куска не было двух правил вместо одного. Смотри dispose().
+   */
+  getFallback(): THREE.Material
   dispose(): void
 }
 
@@ -29,6 +35,20 @@ function parse(buffer: ArrayBuffer): Promise<THREE.Group> {
       (error) => reject(error instanceof Error ? error : new Error(String(error))),
     )
   })
+}
+
+/**
+ * Освобождает материал вместе со всеми текстурами, которые на нём может нести
+ * MeshLambertMaterial. optimizeMaterials переносит на него map, emissiveMap и
+ * aoMap — сегодня на карте заняты не все три, но диспоуз обязан закрывать все
+ * слоты, которые код выше готов заполнить, а не только те, что заполнены сейчас.
+ */
+function disposeMaterial(material: THREE.Material): void {
+  const lambert = material as THREE.MeshLambertMaterial
+  lambert.map?.dispose()
+  lambert.emissiveMap?.dispose()
+  lambert.aoMap?.dispose()
+  material.dispose()
 }
 
 /**
@@ -69,15 +89,22 @@ export async function loadChunkMaterials(baseUrl: string): Promise<ChunkMaterial
     child.geometry.dispose()
   }
 
+  // Заглушка тоже общая на карту: если завести её на каждый кусок отдельно,
+  // выгрузка куска не сможет отличить её от разделяемых материалов — и либо
+  // диспозит общее вместе с чужим (та самая беда disposeScene), либо не
+  // диспозит ничего и копит по заглушке на каждый кусок с пропавшим
+  // материалом за всю сессию. Здесь заглушка одна, и правило для выгрузки
+  // куска становится единым: материалы куска не диспозятся никогда, только
+  // его геометрия.
+  const fallback = new THREE.MeshLambertMaterial({ color: 0x898989 })
+
   return {
     get: (name) => byName.get(name),
+    getFallback: () => fallback,
     dispose: () => {
-      for (const material of byName.values()) {
-        const map = (material as THREE.MeshLambertMaterial).map
-        map?.dispose()
-        material.dispose()
-      }
+      for (const material of byName.values()) disposeMaterial(material)
       byName.clear()
+      disposeMaterial(fallback)
     },
   }
 }
@@ -90,28 +117,27 @@ export async function loadChunkMaterials(baseUrl: string): Promise<ChunkMaterial
  * памяти остаётся сотня мёртвых материалов.
  *
  * Кусок, чьего материала нет в общем файле, не выбрасывается: геометрия важнее
- * вида, по ней считаются столкновения. Такой меш получает серую заглушку.
+ * вида, по ней считаются столкновения. Такой меш получает заглушку из
+ * ChunkMaterials — она общая на карту, поэтому и здесь ничего не диспозится:
+ * все материалы на возвращённой сцене чужие, выгрузка куска трогает только
+ * геометрию.
  */
 export async function loadChunk(url: string, materials: ChunkMaterials): Promise<THREE.Group> {
   const buffer = await fetchChunkFile(url)
   const scene = await parse(buffer)
 
-  const fallback = new THREE.MeshLambertMaterial({ color: 0x898989 })
-  let usedFallback = false
+  const resolve = (own: THREE.Material): THREE.Material => {
+    const shared = materials.get(own.name)
+    own.dispose()
+    return shared ?? materials.getFallback()
+  }
 
   scene.traverse((object) => {
     if (!(object instanceof THREE.Mesh) || !object.material) return
-    const own = object.material as THREE.Material
-    const shared = materials.get(own.name)
-    if (shared) {
-      object.material = shared
-    } else {
-      object.material = fallback
-      usedFallback = true
-    }
-    own.dispose()
+    object.material = Array.isArray(object.material)
+      ? object.material.map(resolve)
+      : resolve(object.material)
   })
 
-  if (!usedFallback) fallback.dispose()
   return scene
 }
