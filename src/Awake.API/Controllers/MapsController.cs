@@ -4,6 +4,7 @@ using Awake.Application.Features.Maps.Commands.DeleteMapLayout;
 using Awake.Application.Features.Maps.Commands.SaveMapLayout;
 using Awake.Application.Features.Maps.Queries.GetMapLayout;
 using Awake.Application.Features.Maps.Queries.GetMapLayouts;
+using Awake.Application.Features.Maps.Queries.GetMapChunks;
 using Awake.Application.Features.Maps.Queries.GetMapModel;
 using Awake.Domain.Enums;
 using MediatR;
@@ -61,6 +62,31 @@ public class MapsController(ISender sender) : ControllerBase
             file.LastWriteTimeUtc,
             new EntityTagHeaderValue(version),
             enableRangeProcessing: true);
+    }
+
+    /// <summary>Адрес папки с кусками локации для потоковой подгрузки.</summary>
+    [HttpGet("{location}/chunks")]
+    [RankAuthorize(UserRank.Member)]
+    public async Task<IActionResult> GetChunks(string location, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetMapChunksQuery(location), ct);
+        return result.IsSuccess ? Ok(new { baseUrl = result.Value }) : NotFound();
+    }
+
+    /// <summary>
+    /// Отдаёт файл куска с диска — только для стенда, где внешнего хранилища
+    /// нет. Куски неизменяемы по построению: правка карты рождает новую
+    /// нарезку, а не переписывает старую, поэтому кэш годичный.
+    /// </summary>
+    [HttpGet("{location}/chunks/{file}")]
+    [RankAuthorize(UserRank.Member)]
+    public IActionResult GetChunkFile(string location, string file, [FromServices] IMapAssetService assets)
+    {
+        var path = assets.GetChunkFilePath(location, file);
+        if (path is null) return NotFound();
+
+        Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+        return PhysicalFile(path, file.EndsWith(".json") ? "application/json" : "model/gltf-binary");
     }
 
     /// <summary>Список общеклановых расстановок заграждений на локации.</summary>
