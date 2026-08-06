@@ -42,6 +42,12 @@ const UP = new THREE.Vector3(0, 1, 0)
 
 export interface PlayerProps {
   scene: THREE.Group
+  /**
+   * Границы карты. Со стримингом сцена в начале пуста, и замерить её нечем:
+   * Box3.setFromObject вернул бы пустую коробку, а по ней точка появления
+   * оказалась бы в нуле координат, и персонаж полетел бы в пустоту.
+   */
+  bounds?: THREE.Box3
   spawn?: [number, number, number]
   /** Свободный полёт сквозь геометрию: без гравитации и без столкновений. */
   flying?: boolean
@@ -81,6 +87,7 @@ export interface PlayerProps {
  */
 export function Player({
   scene,
+  bounds: boundsProp,
   spawn,
   flying = false,
   placed = [],
@@ -109,6 +116,8 @@ export function Player({
   const velocityY = useRef(0)
   const grounded = useRef(false)
   const started = useRef(false)
+  /** Высота до применения гравитации в этом кадре — к ней и откатываемся. */
+  const beforeGravity = useRef(0)
 
   const forward = useRef(new THREE.Vector3())
   const right = useRef(new THREE.Vector3())
@@ -121,7 +130,10 @@ export function Player({
   const previous = useRef(new THREE.Vector3())
   const yaw = useRef(0)
 
-  const bounds = useMemo(() => new THREE.Box3().setFromObject(scene), [scene])
+  const bounds = useMemo(
+    () => boundsProp ?? new THREE.Box3().setFromObject(scene),
+    [boundsProp, scene],
+  )
 
   const placeAtSpawn = useCallback(() => {
     const wantX = spawn ? spawn[0] : (bounds.min.x + bounds.max.x) / 2
@@ -291,6 +303,7 @@ export function Player({
       velocityY.current = JUMP_SPEED
       grounded.current = false
     }
+    beforeGravity.current = feet.current.y
     velocityY.current -= GRAVITY * delta
     feet.current.y += velocityY.current * delta
 
@@ -316,6 +329,14 @@ export function Player({
       }
     } else {
       grounded.current = false
+      // Опоры нет — но со стримингом это значит не «пропасть», а «кусок ещё не
+      // приехал». Отличаем по высоте: настоящая пропасть начинается ниже карты,
+      // а на её уровне пола просто нет. Во втором случае замираем на месте:
+      // уронить игрока сквозь незагруженный пол хуже, чем задержать на миг.
+      if (feet.current.y > bounds.min.y) {
+        feet.current.y = beforeGravity.current
+        velocityY.current = 0
+      }
     }
 
     // провалился мимо карты — возвращаем на точку появления, иначе падение

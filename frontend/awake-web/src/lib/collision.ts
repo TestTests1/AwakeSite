@@ -33,13 +33,40 @@ export class TerrainCollider {
   private readonly rayBox = new THREE.Box3()
   private readonly to = new THREE.Vector3()
 
-  constructor(scene: THREE.Object3D) {
-    scene.updateMatrixWorld(true)
-    scene.traverse((object) => {
+  constructor(scene?: THREE.Object3D) {
+    if (scene) this.addPart(scene)
+    this.raycaster.firstHitOnly = true
+  }
+
+  /**
+   * Подключает кусок карты к лучам.
+   *
+   * Дерево здесь не строится: оно строится лениво в prepare, и только рядом с
+   * игроком. Кусок, пришедший на краю дальности, игроку не нужен ещё секунды —
+   * а построение дерева на его геометрию стоит кадра.
+   */
+  addPart(root: THREE.Object3D): void {
+    root.updateMatrixWorld(true)
+    root.traverse((object) => {
       if (!(object instanceof THREE.Mesh) || !object.geometry) return
       this.parts.push({ mesh: object, box: new THREE.Box3().setFromObject(object) })
     })
-    this.raycaster.firstHitOnly = true
+  }
+
+  /**
+   * Снимает кусок с лучей и освобождает его деревья.
+   *
+   * Вызывать обязательно до dispose геометрии: иначе в списке остаётся меш с
+   * освобождённым буфером, и первый же луч по нему падает.
+   */
+  removePart(root: THREE.Object3D): void {
+    const inside = new Set<THREE.Object3D>()
+    root.traverse((object) => inside.add(object))
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      if (!inside.has(this.parts[i].mesh)) continue
+      this.parts[i].mesh.geometry.disposeBoundsTree?.()
+      this.parts.splice(i, 1)
+    }
   }
 
   /**
