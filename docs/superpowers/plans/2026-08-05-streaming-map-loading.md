@@ -160,18 +160,28 @@ async function verify(sourcePath, outDir) {
       }
     }
 
+    // Координаты читаются ЧЕРЕЗ матрицу узла, а не из вершин напрямую.
+    // quantize() нормирует вершины в -1..1, а мировое положение уносит в
+    // матрицу: у куска c_107_73 в POSITION лежит 0,±1, а место на карте
+    // (6912, 93, 4712) хранится отдельно. Отрисовке и столкновениям это не
+    // мешает — three.js матрицу применяет сам, — но проверка без неё мерит
+    // не то и ругается на каждый кусок.
     const x0 = entry.x * CHUNK, z0 = entry.z * CHUNK;
-    for (const mesh of document.getRoot().listMeshes()) {
+    outside: for (const node of document.getRoot().listNodes()) {
+      const mesh = node.getMesh();
+      if (!mesh) continue;
+      const matrix = node.getWorldMatrix();
       for (const primitive of mesh.listPrimitives()) {
         const position = primitive.getAttribute('POSITION');
         const element = [0, 0, 0];
         for (let i = 0; i < position.getCount(); i++) {
           position.getElement(i, element);
+          applyMatrix(matrix, element);
           const [x, , z] = element;
           if (x < x0 - 0.5 || x > x0 + CHUNK + 0.5 || z < z0 - 0.5 || z > z0 + CHUNK + 0.5) {
             console.error(`${entry.file}: вершина (${x.toFixed(1)}, ${z.toFixed(1)}) вне клетки`);
             problems++;
-            i = position.getCount(); // одной жалобы на кусок достаточно
+            break outside; // одной жалобы на кусок достаточно
           }
         }
       }
@@ -204,6 +214,8 @@ node --max-old-space-size=12288 split_chunks.mjs D:/Awake/SC_Map_Dump-main/tmp_e
 - [ ] **Step 4: Написать саму нарезку**
 
 Дописать в тот же файл. Читается модель, каждый треугольник раскладывается по клеткам, затем на каждую клетку собирается документ.
+
+`applyMatrix` объявляется здесь, а используется и в проверке из шага 2 — это обычное объявление функции, оно поднимается, и порядок в файле роли не играет.
 
 ```js
 /** Умножение точки на матрицу 4×4 из gltf-transform (по столбцам). */
