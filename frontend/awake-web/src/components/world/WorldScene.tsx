@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 import * as THREE from 'three'
 import type { MapLocation } from '@/api/maps'
 import { loadAvatar } from '@/lib/avatar'
+import { TerrainCollider } from '@/lib/collision'
+import type { MapManifest } from '@/lib/mapManifest'
 import { loadSky } from '@/lib/sky'
 import { loadPlaced, PROP_KINDS, savePlaced, type PlacedProp } from '@/lib/props'
 import { Avatar, useAvatarSource, type AvatarSample } from './Avatar'
@@ -19,6 +21,7 @@ import {
   type RenderReport,
 } from './RenderStats'
 import { RenderTuning } from './RenderTuning'
+import { useChunkStream } from './useChunkStream'
 import { useWorldSession } from './useWorldSession'
 
 /**
@@ -79,20 +82,21 @@ function usePointerLocked(): boolean {
 }
 
 /**
- * Туман прячет стык карты с небом. Карта кончается ровным прямоугольным
- * обрывом, а за ним на скайбоксе нарисована уходящая к горизонту земля —
- * без тумана этот шов режет глаз.
+ * Туман прячет границу загруженного. Раньше он прятал край карты и потому
+ * считался долями её размаха; теперь карта грузится кусками, и прятать надо
+ * место, где куски кончаются, — а оно на одном и том же расстоянии на любой
+ * карте.
  *
  * Цвет не подобран на глаз, а снят с самого скайбокса: среднее по полосе неба
  * над горизонтом на четырёх боковых гранях. Поэтому дальние блоки растворяются
  * ровно в тот тон, который за ними и нарисован. Сменится небо — пересчитать.
  *
- * Границы заданы долями размаха локации, а не в блоках: карты разного размера,
- * и постоянное расстояние на одной было бы у самого носа, на другой — за краем.
+ * Конец совпадает с дальностью загрузки из useChunkStream: отодвинуть его
+ * дальше значит показать пустоту за последним куском.
  */
 const FOG_COLOR = 0x8099ac
-const FOG_START = 0.45
-const FOG_END = 1.05
+const FOG_START = 70
+const FOG_END = 120
 
 /**
  * Собственная фигура. Рисуется только когда камера отошла за спину — иначе она
@@ -116,14 +120,14 @@ function LocalAvatar({ playerRef }: { playerRef: RefObject<PlayerReport | null> 
 }
 
 export function WorldScene({
-  scene,
-  spawn,
+  baseUrl,
+  manifest,
   mapKey = 'default',
   location,
   onClose,
 }: {
-  scene: THREE.Group
-  spawn?: [number, number, number]
+  baseUrl: string
+  manifest: MapManifest
   /** Ключ карты: к нему привязана черновая расстановка в браузере. */
   mapKey?: string
   /** Локация для общеклановых расстановок. У отдельных тайлов её нет. */
@@ -247,18 +251,43 @@ export function WorldScene({
     }
   }, [building, menu])
 
+  /**
+   * Сцена, в которую управляющий кладёт куски. Создаётся один раз и живёт
+   * дольше любого куска — три.js не даёт добавлять объекты в ещё не собранную
+   * сцену, а куски начинают приходить до первого кадра.
+   */
+  const group = useMemo(() => new THREE.Group(), [])
+
+  /**
+   * Границы и размах берутся из манифеста, а не из сцены: сцена в начале пуста,
+   * и замер вернул бы нулевую коробку.
+   */
   const view = useMemo(() => {
-    const box = new THREE.Box3().setFromObject(scene)
-    const center = box.getCenter(new THREE.Vector3())
-    const size = box.getSize(new THREE.Vector3())
-    const span = Math.max(size.x, size.y, size.z)
-    return {
-      center: center.toArray() as [number, number, number],
-      far: span * 10,
-      span,
-      size,
-    }
-  }, [scene])
+    const min = new THREE.Vector3(...manifest.bounds.min)
+    const max = new THREE.Vector3(...manifest.bounds.max)
+    const bounds = new THREE.Box3(min, max)
+    const size = max.clone().sub(min)
+    return { bounds, size, far: Math.max(size.x, size.y, size.z) * 10 }
+  }, [manifest])
+
+  /**
+   * Коллайдер живёт рядом со сценой, а не внутри Player: куски приходят и
+   * уходят независимо от того, перерисовался ли Player.
+   */
+  const collider = useMemo(() => new TerrainCollider(), [])
+  useEffect(() => () => collider.dispose(), [collider])
+
+  const addChunk = useCallback((chunk: THREE.Group) => collider.addPart(chunk), [collider])
+  const removeChunk = useCallback((chunk: THREE.Group) => collider.removePart(chunk), [collider])
+
+  const stream = useChunkStream({
+    baseUrl,
+    manifest,
+    playerRef,
+    group,
+    onAdd: addChunk,
+    onRemove: removeChunk,
+  })
 
   return (
     // data-mode нужен автотестам: по нему видно текущий режим, не разбирая текст
@@ -266,17 +295,19 @@ export function WorldScene({
       {/* Камера ставится сразу на точку появления: Player доведёт её до земли
           в своём эффекте, но до первого кадра эффекты не срабатывают, и с
           обзорной позиции мелькнул бы вид издалека. */}
-      <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: spawn ?? view.center }}>
+      <Canvas camera={{ fov: 60, near: 0.5, far: view.far, position: manifest.spawn }}>
         <SkyBox />
-        <fog attach="fog" args={[FOG_COLOR, view.span * FOG_START, view.span * FOG_END]} />
+        <fog attach="fog" args={[FOG_COLOR, FOG_START, FOG_END]} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[1, 2, 1]} intensity={1.4} />
-        <MapModel scene={scene} />
+        <MapModel scene={group} />
         <PlacedProps placed={placed} />
         <RemoteAvatars players={players} />
         <Player
-          scene={scene}
-          spawn={spawn}
+          scene={group}
+          bounds={view.bounds}
+          collider={collider}
+          spawn={manifest.spawn}
           flying={flying}
           placed={placed}
           thirdPerson={thirdPerson}
@@ -286,7 +317,7 @@ export function WorldScene({
         {thirdPerson && <LocalAvatar playerRef={playerRef} />}
         {building && (
           <Builder
-            scene={scene}
+            scene={group}
             placed={placed}
             kindIndex={kindIndex}
             rotation={rotation}
@@ -297,8 +328,42 @@ export function WorldScene({
           />
         )}
         <RenderStats onReport={setReport} />
-        <RenderTuning scene={scene} />
+        <RenderTuning scene={group} />
       </Canvas>
+
+      {/*
+       * Заслонка держится, пока не встал материал и не встал кусок под ногами
+       * (stream.ready). loaded/needed до этого момента считают куски вокруг
+       * точки появления и годятся для полоски прогресса; после ready тот же
+       * счёт идёт по кускам вокруг текущей позиции игрока и может падать почти
+       * до нуля на бегу — поэтому здесь используется только !stream.ready, а
+       * не составное условие с loaded/needed.
+       *
+       * Кусок под точкой появления восстанавливается только тем, что игрок
+       * отходит дальше 160 м и возвращается, — а до stream.ready он вообще не
+       * может ходить. Если материалы или этот кусок исчерпали попытки, полоса
+       * прогресса застынет навсегда без единого слова объяснения — поэтому
+       * ниже отдельно и честно показано, что стряслось, а не просто цифра
+       * failed мелким шрифтом под неподвижным баром.
+       */}
+      {!stream.ready && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black">
+          <p className="text-sm text-muted-foreground">{t('world.streaming')}</p>
+          <div className="h-2 w-64 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{ width: `${Math.min(100, Math.round((stream.loaded / Math.max(stream.needed, 1)) * 100))}%` }}
+            />
+          </div>
+          {stream.materialsFailed ? (
+            <p className="text-xs text-destructive">{t('world.materialsFailed')}</p>
+          ) : (
+            stream.failed > 0 && (
+              <p className="text-xs text-destructive">{t('world.chunkErrors', { count: stream.failed })}</p>
+            )
+          )}
+        </div>
+      )}
 
       <RenderStatsOverlay report={report} playerRef={playerRef} />
 

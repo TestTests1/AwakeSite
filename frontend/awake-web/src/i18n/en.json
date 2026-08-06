@@ -104,6 +104,9 @@
     "flyHint": "Flight: WASD to fly, Space up, C down, Shift faster, V for view, F to land",
     "close": "Close map",
     "cancel": "Cancel loading",
+    "streaming": "Loading the surroundings…",
+    "chunkErrors": "Failed to load {{count}} area(s)",
+    "materialsFailed": "Failed to load map materials. Please reload the page.",
     "menu": {
       "title": "Paused",
       "resume": "Back to the game"

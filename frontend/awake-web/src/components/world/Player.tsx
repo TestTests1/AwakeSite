@@ -49,6 +49,11 @@ export interface PlayerProps {
    */
   bounds?: THREE.Box3
   spawn?: [number, number, number]
+  /**
+   * Общий коллайдер. Со стримингом он переживает перерисовки Player и знает про
+   * куски, пришедшие, пока Player не перемонтировался.
+   */
+  collider?: TerrainCollider
   /** Свободный полёт сквозь геометрию: без гравитации и без столкновений. */
   flying?: boolean
   /** Поставленные заграждения: пешком через них не пройти. */
@@ -88,6 +93,7 @@ export interface PlayerProps {
 export function Player({
   scene,
   bounds: boundsProp,
+  collider: colliderProp,
   spawn,
   flying = false,
   placed = [],
@@ -99,8 +105,9 @@ export function Player({
   const keys = useKeyboard()
   usePointerLook(active)
 
-  const collider = useMemo(() => new TerrainCollider(scene), [scene])
-  useEffect(() => () => collider.dispose(), [collider])
+  const collider = useMemo(() => colliderProp ?? new TerrainCollider(scene), [colliderProp, scene])
+  // свой коллайдер освобождаем, чужой — нет: им распоряжается тот, кто создал
+  useEffect(() => () => { if (!colliderProp) collider.dispose() }, [collider, colliderProp])
 
   // Заграждения подключаются к тем же лучам, что и рельеф, поэтому упор в них
   // получается по настоящей геометрии модели: сквозь проём баррикады с окном
