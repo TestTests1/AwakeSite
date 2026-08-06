@@ -80,10 +80,31 @@ function countTriangles(document) {
 /**
  * Сверяет нарезку с исходником.
  *
- * Проверяется три вещи, и все три — про то, что геометрия цела:
+ * Геометрия цела, если:
  *   1. сумма треугольников по кускам равна исходной;
  *   2. каждое имя материала из куска есть в materials.glb;
- *   3. ни одна вершина куска не выходит за его клетку больше чем на полметра.
+ *   3. ни одна вершина куска не выходит за его клетку больше чем на три метра.
+ *
+ * Три метра, а не полметра, как задумывалось: замер исходника «Низины» показал
+ * 1 425 500 треугольников крупнее блока (8.7% из 16 456 206), самый крупный —
+ * 4.01 м. Треугольник, приписанный клетке по своему центру, может свесить
+ * вершину метра на три. Это безвредно: кусок 64 м, дальность загрузки 120 м,
+ * значит соседние клетки всегда в сцене вместе — ни щели не видно, ни дыры в
+ * полу. Число сведено из замера, а не взято на глаз: сменится экспортёр —
+ * перемерить.
+ *
+ * Манифест — интерфейс для трёх следующих задач, и они читают его поля не
+ * глядя в сами файлы кусков, поэтому проверяются и поля:
+ *   4. entry.tris совпадает с реальным числом треугольников в файле куска;
+ *   5. entry.minY/maxY совпадают с реальным диапазоном Y вершин куска — клиент
+ *      режет кусок по пирамиде видимости именно по ним, не разбирая файл, и
+ *      заниженный maxY срежет кусок, на котором стоит игрок;
+ *   6. bounds манифеста равны объединению границ всех кусков;
+ *   7. у каждого примитива в каждом куске все атрибуты содержат столько же
+ *      элементов, сколько POSITION — рассинхрон здесь означает битый glTF
+ *      (three.js читает индекс за концом короткого атрибута) и ловит заодно
+ *      весь класс багов вроде несовпадения набора семантик у двух примитивов
+ *      одного бакета (см. комментарий у fail-loud проверки в bucketTriangles).
  */
 async function verify(sourcePath, outDir) {
   if (!existsSync(outDir)) {
@@ -100,11 +121,26 @@ async function verify(sourcePath, outDir) {
       .getRoot().listMaterials().map((m) => m.getName()),
   );
 
+  // Объединение границ кусков — для сверки с manifest.bounds (пункт 6).
+  // Считается независимо от того, как bounds посчитан в split(), той же
+  // формулой по entry.x/z/minY/maxY — иначе проверка просто повторила бы
+  // возможную ошибку split() и ничего бы не поймала.
+  let boundsMin = [Infinity, Infinity, Infinity];
+  let boundsMax = [-Infinity, -Infinity, -Infinity];
+
+  const OVERHANG = 3; // см. пояснение в шапке функции
+
   let actual = 0;
   let problems = 0;
   for (const entry of manifest.chunks) {
     const document = await io.read(join(outDir, entry.file));
-    actual += countTriangles(document);
+    const tris = countTriangles(document);
+    actual += tris;
+
+    if (tris !== entry.tris) {
+      console.error(`${entry.file}: манифест обещал ${entry.tris} треугольников, в файле ${tris}`);
+      problems++;
+    }
 
     for (const material of document.getRoot().listMaterials()) {
       if (!shared.has(material.getName())) {
@@ -119,40 +155,70 @@ async function verify(sourcePath, outDir) {
     // (6912, 93, 4712) хранится отдельно. Отрисовке и столкновениям это не
     // мешает — three.js матрицу применяет сам, — но проверка без неё мерит
     // не то и ругается на каждый кусок.
-    //
-    // Допуск на выход за клетку — 3 м, не полметра. Промерил исходную модель
-    // «Низины» напрямую: 1 425 500 треугольников (8.7% от 16.46 млн) крупнее
-    // одного блока, до 4.01 м (материал stc_missing_opaque). Клетку треугольнику
-    // выбирает его ЦЕНТР, поэтому вершина такого треугольника может свеситься в
-    // соседнюю клетку почти на половину его длины — до ~3 м для замеренного
-    // максимума. Раньше в комментарии было заявлено «не длиннее блока» — это
-    // не подтвердилось, отсюда и старый допуск в полметра, и 26 ложных жалоб
-    // на честную геометрию. Свес безвреден: кусок — 64 м, а дальность прогрузки
-    // — 120 м, так что соседняя клетка всегда в сцене вместе с этой — щели не
-    // возникает и проваливаться некуда. Если экспортёр когда-нибудь начнёт
-    // резать модель на более крупные треугольники, десятки метров — этот замер
-    // придётся переделать и число здесь пересчитать, а не просто увеличить.
-    const OVERHANG = 3;
     const x0 = entry.x * CHUNK, z0 = entry.z * CHUNK;
-    outside: for (const node of document.getRoot().listNodes()) {
+    let chunkMinY = Infinity, chunkMaxY = -Infinity;
+    let boundaryReported = false; // одной жалобы на кусок о выходе за клетку достаточно
+    for (const node of document.getRoot().listNodes()) {
       const mesh = node.getMesh();
       if (!mesh) continue;
       const matrix = node.getWorldMatrix();
       for (const primitive of mesh.listPrimitives()) {
         const position = primitive.getAttribute('POSITION');
+
+        // У всех атрибутов примитива должно быть поровну элементов. Если
+        // нет — где-то в bucketTriangles записали не столько же вершин в
+        // атрибут, сколько в POSITION (см. fail-loud проверку там же): три.js
+        // читает по единому индексу во все атрибуты разом и уйдёт за конец
+        // короткого массива.
+        for (const semantic of primitive.listSemantics()) {
+          const count = primitive.getAttribute(semantic).getCount();
+          if (count !== position.getCount()) {
+            console.error(`${entry.file}: у «${semantic}» ${count} элементов, у POSITION ${position.getCount()}`);
+            problems++;
+          }
+        }
+
         const element = [0, 0, 0];
         for (let i = 0; i < position.getCount(); i++) {
           position.getElement(i, element);
           applyMatrix(matrix, element);
-          const [x, , z] = element;
-          if (x < x0 - OVERHANG || x > x0 + CHUNK + OVERHANG || z < z0 - OVERHANG || z > z0 + CHUNK + OVERHANG) {
+          const [x, y, z] = element;
+          chunkMinY = Math.min(chunkMinY, y);
+          chunkMaxY = Math.max(chunkMaxY, y);
+          if (!boundaryReported &&
+            (x < x0 - OVERHANG || x > x0 + CHUNK + OVERHANG || z < z0 - OVERHANG || z > z0 + CHUNK + OVERHANG)) {
             console.error(`${entry.file}: вершина (${x.toFixed(1)}, ${z.toFixed(1)}) вне клетки`);
             problems++;
-            break outside; // одной жалобы на кусок достаточно
+            boundaryReported = true; // не break — ниже досчитываем minY/maxY
           }
         }
       }
     }
+
+    if (Math.floor(chunkMinY) !== entry.minY || Math.ceil(chunkMaxY) !== entry.maxY) {
+      console.error(`${entry.file}: манифест обещал minY=${entry.minY} maxY=${entry.maxY}, ` +
+        `в файле ${Math.floor(chunkMinY)}..${Math.ceil(chunkMaxY)}`);
+      problems++;
+    }
+
+    boundsMin = [
+      Math.min(boundsMin[0], entry.x * CHUNK),
+      Math.min(boundsMin[1], entry.minY),
+      Math.min(boundsMin[2], entry.z * CHUNK),
+    ];
+    boundsMax = [
+      Math.max(boundsMax[0], (entry.x + 1) * CHUNK),
+      Math.max(boundsMax[1], entry.maxY),
+      Math.max(boundsMax[2], (entry.z + 1) * CHUNK),
+    ];
+  }
+
+  if (boundsMin.some((v, i) => v !== manifest.bounds.min[i]) ||
+    boundsMax.some((v, i) => v !== manifest.bounds.max[i])) {
+    console.error(`манифест: bounds не совпадает с объединением кусков — ` +
+      `в манифесте [${manifest.bounds.min}]..[${manifest.bounds.max}], ` +
+      `по кускам [${boundsMin}]..[${boundsMax}]`);
+    problems++;
   }
 
   console.log(`треугольников: исходник ${expected.toLocaleString('ru-RU')}, ` +
@@ -175,6 +241,38 @@ function applyMatrix(m, out) {
   out[1] = m[1] * x + m[5] * y + m[9] * z + m[13];
   out[2] = m[2] * x + m[6] * y + m[10] * z + m[14];
   return out;
+}
+
+/**
+ * Диапазон Y по всем примитивам документа — через матрицу узла.
+ *
+ * Вызывать ПОСЛЕ quantize()/meshopt(), а не по сырым данным бакетов: те же
+ * функции, что сжимают X/Z, чуть сдвигают и Y, и на границе целого числа
+ * этого сдвига хватает, чтобы значение перескочило через неё. Досчитанный
+ * заранее (по бакетам, до сжатия) minY/maxY в манифесте тогда разойдётся
+ * с тем, что реально лежит в файле, — а manifest.minY/maxY клиент использует
+ * для отсечения по пирамиде видимости без разбора файла: заниженный maxY
+ * срежет кусок, на котором стоит игрок. Эта же функция используется в
+ * --verify, чтобы проверка и запись мерили Y одинаково.
+ */
+function computeYExtent(document) {
+  let min = Infinity, max = -Infinity;
+  for (const node of document.getRoot().listNodes()) {
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const matrix = node.getWorldMatrix();
+    for (const primitive of mesh.listPrimitives()) {
+      const position = primitive.getAttribute('POSITION');
+      const element = [0, 0, 0];
+      for (let i = 0; i < position.getCount(); i++) {
+        position.getElement(i, element);
+        applyMatrix(matrix, element);
+        min = Math.min(min, element[1]);
+        max = Math.max(max, element[1]);
+      }
+    }
+  }
+  return { min, max };
 }
 
 /**
@@ -226,6 +324,15 @@ function bucketTriangles(document) {
         world[v * 3 + 2] = element[2];
       }
 
+      // Свой scratch-массив на каждую семантику примитива, переиспользуется для
+      // всех его вершин ниже. Без этого «Хвойный» (геометрии в разы больше, чем
+      // у «Низины», которая уже требует всю 12-гигабайтную кучу) плодил бы по
+      // новому [] на каждую пару вершина-семантика — десятки миллионов лишних
+      // аллокаций. Размер каждого элемента scratch фиксирован под свою семантику
+      // (getElementSize не меняется), поэтому getElement переписывает его
+      // целиком и старые значения не просачиваются.
+      const scratch = attributes.map((a) => new Array(a.getElementSize()));
+
       for (let t = 0; t < count; t += 3) {
         const a = indices ? indices.getScalar(t) : t;
         const b = indices ? indices.getScalar(t + 1) : t + 1;
@@ -243,17 +350,64 @@ function bucketTriangles(document) {
           bucket = {
             gx, gz, materialName,
             semantics,
+            types: attributes.map((a) => a.getType()), // реальный тип из источника, не догадка — см. buildChunk
             remap: new Map(),
             indices: [],
             data: semantics.map(() => []),
-            minY: Infinity,
-            maxY: -Infinity,
+            seenPrimitives: new Set([primitiveSerial]),
           };
           buckets.set(key, bucket);
+        } else if (!bucket.seenPrimitives.has(primitiveSerial)) {
+          bucket.seenPrimitives.add(primitiveSerial);
+          // ЖЁСТКАЯ проверка, не тихий пропуск. Бакет зафиксировал набор
+          // атрибутов по первому примитиву, который его создал. Если у ЭТОГО
+          // примитива не хватает какой-то из них, для его вершин ниже
+          // bucket.data[slot] той семантики не пополнится, а для вершин
+          // первого примитива — уже пополнился: у атрибута в куске окажется
+          // МЕНЬШЕ элементов, чем у POSITION. buildChunk запишет аксессоры
+          // разной длины на один примитив — невалидный glTF, а three.js в
+          // рантайме читает по общему индексу и уйдёт за конец короткого
+          // массива. Обратное — у ЭТОГО примитива атрибут, которого бакет не
+          // знает, — безопасно и разрешено (см. slot === -1 ниже, просто не
+          // переносим); опасно именно недостающее у бакета, поэтому проверяем
+          // только эту сторону. Модель собрана из тайлов, оптимизированных
+          // независимо (optimize_tiles.py — отдельный процесс на тайл), и
+          // gltf-transform не гарантирует одинаковый порядок и набор
+          // атрибутов между независимыми прогонами — на «Низине» порядок уже
+          // расходился (баг 2 в отчёте задачи), набор — пока нет. На другой
+          // карте набор тоже может разойтись; пусть тогда падает здесь, а не
+          // тихо портит кусок.
+          const missing = bucket.semantics.filter((need) => !semantics.includes(need));
+
+          // Заодно сверяем ТИП совпадающих семантик, не только имя: COLOR_0
+          // бывает и VEC3, и VEC4 (см. buildChunk), и если два примитива в
+          // одном бакете разойдутся по типу — плоский bucket.data[slot]
+          // получит вперемешку записи по 3 и по 4 числа, а элемент-размер
+          // аксессора зафиксирован один. Тот же класс поломки, что и с
+          // недостающей семантикой, поэтому падаем той же проверкой.
+          const mismatched = bucket.semantics
+            .filter((need) => !missing.includes(need))
+            .filter((need) => attributes[semantics.indexOf(need)].getType() !== bucket.types[bucket.semantics.indexOf(need)]);
+
+          if (missing.length > 0 || mismatched.length > 0) {
+            throw new Error(
+              `bucketTriangles: клетка ${gx},${gz}, материал «${materialName}» — примитив #${primitiveSerial} ` +
+              `несёт атрибуты [${semantics.join(', ')}], а бакет уже собран по примитиву с ` +
+              `[${bucket.semantics.join(', ')}].` +
+              (missing.length > 0 ? ` Не хватает: ${missing.join(', ')}.` : '') +
+              (mismatched.length > 0 ? ` Разный тип у: ${mismatched.join(', ')}.` : ''),
+            );
+          }
         }
 
         for (const vertex of [a, b, c]) {
-          const remapKey = `${primitiveSerial}:${vertex}`;
+          // Числовой ключ вместо строкового: primitiveSerial * 1e7 + vertex
+          // остаётся точным числом (в пределах 2^53) при разумных размерах
+          // примитивов и не аллоцирует строку на каждую вершину каждого
+          // треугольника — на «Хвойном» это десятки миллионов строк меньше.
+          // 1e7 — запас на количество вершин в одном примитиве; больше в
+          // этой модели не встречается ни у одного примитива.
+          const remapKey = primitiveSerial * 1e7 + vertex;
           let mapped = bucket.remap.get(remapKey);
           if (mapped === undefined) {
             mapped = bucket.remap.size;
@@ -273,10 +427,8 @@ function bucketTriangles(document) {
               if (slot === -1) continue; // семантики, которой не было у первого примитива, в бакете нет
               if (s === positionIndex) {
                 bucket.data[slot].push(world[vertex * 3], world[vertex * 3 + 1], world[vertex * 3 + 2]);
-                bucket.minY = Math.min(bucket.minY, world[vertex * 3 + 1]);
-                bucket.maxY = Math.max(bucket.maxY, world[vertex * 3 + 1]);
               } else {
-                const value = [];
+                const value = scratch[s];
                 attributes[s].getElement(vertex, value);
                 bucket.data[slot].push(...value);
               }
@@ -290,14 +442,6 @@ function bucketTriangles(document) {
 
   return buckets;
 }
-
-const TYPE_BY_SEMANTIC = {
-  POSITION: 'VEC3',
-  NORMAL: 'VEC3',
-  TEXCOORD_0: 'VEC2',
-  COLOR_0: 'VEC4',
-  TANGENT: 'VEC4',
-};
 
 /** Собирает один кусок из его ведёрок. Материалы — одними именами. */
 function buildChunk(bucketsOfChunk) {
@@ -316,12 +460,15 @@ function buildChunk(bucketsOfChunk) {
 
     const primitive = document.createPrimitive().setMaterial(material);
     for (let s = 0; s < bucket.semantics.length; s++) {
-      const semantic = bucket.semantics[s];
-      const type = TYPE_BY_SEMANTIC[semantic];
-      if (!type) continue; // незнакомую семантику не переносим — её тут не бывает
+      // Тип берём с bucket.types — он записан в bucketTriangles с реального
+      // аксессора источника, не угадан по имени семантики. Угаданная таблица
+      // (была раньше) хардкодила COLOR_0 как VEC4, а glTF разрешает и VEC3:
+      // на VEC3-цвете getElement вернул бы 3 компоненты на вершину, а
+      // setType('VEC4') заставил бы аксессор считать count по 4 — на четверть
+      // меньше вершин, чем в POSITION, и смещённые цвета по всей карте.
       primitive.setAttribute(
-        semantic,
-        document.createAccessor().setType(type).setArray(new Float32Array(bucket.data[s])),
+        bucket.semantics[s],
+        document.createAccessor().setType(bucket.types[s]).setArray(new Float32Array(bucket.data[s])),
       );
     }
     primitive.setIndices(document.createAccessor().setArray(new Uint32Array(bucket.indices)));
@@ -377,15 +524,36 @@ async function split(sourcePath, outDir) {
     const file = `c_${key}.glb`;
     await io.write(join(outDir, file), document);
 
+    // minY/maxY — из уже сжатого document (после quantize/meshopt), а не из
+    // сырых мировых координат до сжатия: см. пояснение у computeYExtent.
+    const { min: yMin, max: yMax } = computeYExtent(document);
+
     const [gx, gz] = key.split('_').map(Number);
     entries.push({
       x: gx,
       z: gz,
       file,
-      minY: Math.floor(Math.min(...list.map((b) => b.minY))),
-      maxY: Math.ceil(Math.max(...list.map((b) => b.maxY))),
+      minY: Math.floor(yMin),
+      maxY: Math.ceil(yMax),
       tris: list.reduce((sum, b) => sum + b.indices.length / 3, 0),
     });
+
+    // Тяжёлые поля ведёрок этого куска больше не нужны: entries выше уже
+    // забрал все числа, что попадут в манифест, а сам кусок уже записан на
+    // диск. buildChunk копирует данные в собственные типизированные массивы
+    // документа, так что оригиналы можно отпускать сразу. buckets/byChunk
+    // живут до конца split() (те же объекты, что и в list), и без явной
+    // очистки вся геометрия карты держалась бы в памяти дважды сразу —
+    // «Низина» (16.5 млн треугольников, 156 МБ) это пережила впритык на
+    // 12 ГБ кучи, а «Хвойный» тяжелее в разы и без этой очистки в ту же
+    // кучу не поместится.
+    for (const bucket of list) {
+      bucket.data = null;
+      bucket.indices = null;
+      bucket.remap = null;
+      bucket.seenPrimitives = null;
+    }
+
     process.stdout.write(`\r  записано ${entries.length}/${byChunk.size}`);
   }
   process.stdout.write('\n');
