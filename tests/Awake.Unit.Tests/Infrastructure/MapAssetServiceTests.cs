@@ -23,13 +23,17 @@ public class MapAssetServiceTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    private MapAssetService BuildService(string? baseUrl = null)
+    private MapAssetService BuildService(string? baseUrl = null, string? chunkBaseUrl = null)
     {
         var env = new Mock<IWebHostEnvironment>();
         env.SetupGet(e => e.ContentRootPath).Returns(_root);
 
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["MapAssets:BaseUrl"] = baseUrl })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MapAssets:BaseUrl"] = baseUrl,
+                ["MapAssets:ChunkBaseUrl"] = chunkBaseUrl,
+            })
             .Build();
 
         return new MapAssetService(env.Object, configuration);
@@ -38,6 +42,15 @@ public class MapAssetServiceTests : IDisposable
     private string CreateModel(string fileName)
     {
         var path = Path.Combine(_root, "MapAssets", fileName);
+        File.WriteAllBytes(path, "glTF"u8.ToArray());
+        return path;
+    }
+
+    private string CreateChunkFile(string canonicalLocation, string fileName)
+    {
+        var dir = Path.Combine(_root, "MapAssets", "v2", canonicalLocation);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, fileName);
         File.WriteAllBytes(path, "glTF"u8.ToArray());
         return path;
     }
@@ -142,5 +155,65 @@ public class MapAssetServiceTests : IDisposable
     public void GetModelSource_WithBaseUrl_StillRejectsUnknownLocation()
     {
         BuildService("https://models.example.com").GetModelSource("../secrets").Should().BeNull();
+    }
+
+    [Theory]
+    // те же попытки выйти за пределы каталога, что и для GetModelSource
+    [InlineData("../appsettings")]
+    [InlineData("..\\appsettings")]
+    [InlineData("../../secrets")]
+    [InlineData("hvoiny/../../appsettings")]
+    [InlineData("C:\\Windows\\win")]
+    [InlineData("")]
+    // и то, что бьёт именно по образцу имени куска
+    [InlineData("../manifest.json")]
+    [InlineData("c_1_1.glb/../../appsettings.json")]
+    [InlineData("manifest.json.bak")]
+    [InlineData("materials.glb%00.txt")]
+    [InlineData("sub/manifest.json")]
+    public void GetChunkFilePath_HostileFileName_ReturnsNull(string file)
+    {
+        BuildService().GetChunkFilePath("nizina", file).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("manifest.json")]
+    [InlineData("materials.glb")]
+    [InlineData("c_0_0.glb")]
+    [InlineData("c_-3_-12.glb")]
+    public void GetChunkFilePath_LegitimateFileNameWithFileOnDisk_ReturnsPath(string file)
+    {
+        // Файл кладём реально на диск: только не-null путь на выходе доказывает,
+        // что образец принял имя, а не отбраковал его ещё до проверки File.Exists.
+        var expected = CreateChunkFile("nizina", file);
+
+        BuildService().GetChunkFilePath("nizina", file).Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetChunkFilePath_UnknownLocation_ReturnsNull()
+    {
+        BuildService().GetChunkFilePath("pripyat", "manifest.json").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("https://models.example.com/maps/v2")]
+    [InlineData("https://models.example.com/maps/v2/")]
+    public void GetChunkBaseUrl_WithConfiguredBaseUrl_ReturnsRemotePrefixWithSingleTrailingSlash(string configured)
+    {
+        BuildService(chunkBaseUrl: configured).GetChunkBaseUrl("nizina")
+            .Should().Be("https://models.example.com/maps/v2/nizina/");
+    }
+
+    [Fact]
+    public void GetChunkBaseUrl_WithoutConfiguredBaseUrl_ReturnsStandFallback()
+    {
+        BuildService().GetChunkBaseUrl("nizina").Should().Be("/api/maps/nizina/chunks/");
+    }
+
+    [Fact]
+    public void GetChunkBaseUrl_UnknownLocation_ReturnsNull()
+    {
+        BuildService().GetChunkBaseUrl("pripyat").Should().BeNull();
     }
 }
