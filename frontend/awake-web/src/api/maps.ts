@@ -108,4 +108,16 @@ export const mapsApi = {
     apiClient.put<MapLayout>(`/maps/${location}/layouts`, { name, props }),
 
   deleteLayout: (id: string) => apiClient.delete<void>(`/maps/layouts/${id}`),
+
+  /**
+   * Адрес папки с кусками локации. На боевом ведёт в хранилище, на стенде — в
+   * само приложение. Ранг проверяется здесь же, поэтому запрос идёт через
+   * apiClient с обычной авторизацией.
+   */
+  getChunkBase: (location: MapLocation) =>
+    apiClient.get<{ baseUrl: string }>(`/maps/${location}/chunks`).then((r) => r.baseUrl),
 }
+
+/** Скачивает файл куска. Куски лежат в хранилище, авторизация туда не едет. */
+export const fetchChunkFile = (url: string, onProgress?: (ratio: number) => void) =>
+  fetchWithProgress(url, onProgress, !url.startsWith('http'))
