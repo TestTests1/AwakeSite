@@ -105,8 +105,8 @@
     "close": "Close map",
     "cancel": "Cancel loading",
     "streaming": "Loading the surroundings…",
-    "chunkErrors": "Failed to load {{count}} area(s)",
     "materialsFailed": "Failed to load map materials. Please reload the page.",
+    "spawnFailed": "Failed to load the area under the entry point. Reload the page or pick another map.",
     "menu": {
       "title": "Paused",
       "resume": "Back to the game"

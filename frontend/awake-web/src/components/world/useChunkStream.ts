@@ -66,6 +66,14 @@ export interface ChunkStream {
   failed: number
   /** Файл материалов не загрузился после всех попыток — сам прогресс дальше не сдвинется. */
   materialsFailed: boolean
+  /**
+   * Войти в мир нельзя: клетки под точкой появления нет в манифесте либо у неё
+   * кончились попытки. Отдельно от failed: сбой дальней клетки на входе никого
+   * не держит, она сама повторится, когда игрок к ней подойдёт, — а вот без
+   * этой клетки ready не встанет никогда, и ждать её молча значит оставить
+   * человека перед чёрным экраном без объяснений.
+   */
+  spawnFailed: boolean
 }
 
 /**
@@ -105,6 +113,7 @@ export function useChunkStream({
     needed: 0,
     failed: 0,
     materialsFailed: false,
+    spawnFailed: false,
   })
 
   // Колбэки — в ref, а не в зависимостях следующего эффекта: на месте вызова
@@ -151,6 +160,9 @@ export function useChunkStream({
         .map(key),
     )
     const spawnKey = `${Math.floor(manifest.spawn[0] / manifest.chunkSize)}_${Math.floor(manifest.spawn[2] / manifest.chunkSize)}`
+    // клетки под точкой появления может не быть в манифесте вовсе — тогда
+    // ждать её бессмысленно, и это надо сказать сразу, а не висеть на входе
+    const spawnMissing = !chunkByKey.has(spawnKey)
 
     /** Где стоит игрок; до первого кадра — точка появления из манифеста. */
     const playerAt = () => playerRef.current?.position ?? {
@@ -175,6 +187,7 @@ export function useChunkStream({
         needed: spawnEntryIds.size,
         failed: failed.size,
         materialsFailed,
+        spawnFailed: !readyLatched && (spawnMissing || failed.has(spawnKey)),
       })
     }
 

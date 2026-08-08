@@ -253,8 +253,9 @@ export function WorldScene({
 
   /**
    * Сцена, в которую управляющий кладёт куски. Создаётся один раз и живёт
-   * дольше любого куска — три.js не даёт добавлять объекты в ещё не собранную
-   * сцену, а куски начинают приходить до первого кадра.
+   * дольше любого куска: поток кладёт в неё куски мимо React, а коллайдер
+   * держит ссылку на тот же объект — пересоздай её при перерисовке, и они
+   * начали бы работать с разными сценами.
    */
   const group = useMemo(() => new THREE.Group(), [])
 
@@ -341,26 +342,41 @@ export function WorldScene({
        *
        * Кусок под точкой появления восстанавливается только тем, что игрок
        * отходит дальше 160 м и возвращается, — а до stream.ready он вообще не
-       * может ходить. Если материалы или этот кусок исчерпали попытки, полоса
-       * прогресса застынет навсегда без единого слова объяснения — поэтому
-       * ниже отдельно и честно показано, что стряслось, а не просто цифра
-       * failed мелким шрифтом под неподвижным баром.
+       * может ходить. Поэтому у безнадёжного случая свой вид: полоска, которая
+       * больше никогда не сдвинется, убирается совсем, и вместо неё сказано,
+       * что войти не получится.
+       *
+       * Выход из мира здесь свой, а не общий из меню паузы: заслонка
+       * непрозрачна и лежит выше меню, так что до кнопки в меню отсюда не
+       * дотянуться мышью. Без этой кнопки единственным способом уйти была бы
+       * перезагрузка страницы — и на слабой машине, ради которой всё это
+       * затевалось, ждать пришлось бы дольше всех.
        */}
       {!stream.ready && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black">
-          <p className="text-sm text-muted-foreground">{t('world.streaming')}</p>
-          <div className="h-2 w-64 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full bg-accent transition-all"
-              style={{ width: `${Math.min(100, Math.round((stream.loaded / Math.max(stream.needed, 1)) * 100))}%` }}
-            />
-          </div>
-          {stream.materialsFailed ? (
-            <p className="text-xs text-destructive">{t('world.materialsFailed')}</p>
+          {stream.materialsFailed || stream.spawnFailed ? (
+            <p className="text-sm text-destructive">
+              {stream.materialsFailed ? t('world.materialsFailed') : t('world.spawnFailed')}
+            </p>
           ) : (
-            stream.failed > 0 && (
-              <p className="text-xs text-destructive">{t('world.chunkErrors', { count: stream.failed })}</p>
-            )
+            <>
+              <p className="text-sm text-muted-foreground">{t('world.streaming')}</p>
+              <div className="h-2 w-64 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full bg-accent transition-all"
+                  style={{ width: `${Math.min(100, Math.round((stream.loaded / Math.max(stream.needed, 1)) * 100))}%` }}
+                />
+              </div>
+            </>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground hover:bg-secondary"
+            >
+              {t('world.close')}
+            </button>
           )}
         </div>
       )}
