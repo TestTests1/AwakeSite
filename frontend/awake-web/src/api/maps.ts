@@ -1,7 +1,36 @@
 import { useAuthStore } from '@/store/authStore'
+import { authApi } from './auth'
 import { apiClient, ApiError } from './client'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? ''
+
+/**
+ * Обновление токена, общее на все идущие разом загрузки.
+ *
+ * Токен доступа живёт 15 минут и обновляется только при загрузке страницы, а по
+ * карте ходят дольше: куски качаются всё время, пока игрок идёт вперёд. Без
+ * этого через четверть часа каждый новый кусок получал бы 401, поток списывал
+ * бы его как сетевой сбой, и мир молча переставал бы прогружаться — впереди
+ * один туман, и понять, что дело в токене, а не в нарезке, нельзя.
+ *
+ * Один промис на всех: кусков качается до шести разом, и каждый, наткнувшись на
+ * протухший токен, полез бы обновлять его сам.
+ */
+let refreshing: Promise<string | null> | null = null
+
+function refreshAccessToken(): Promise<string | null> {
+  refreshing ??= authApi
+    .refresh()
+    .then(({ accessToken, username, rank, userId }) => {
+      useAuthStore.getState().login({ userId, username, rank }, accessToken)
+      return accessToken
+    })
+    .catch(() => null)
+    .finally(() => {
+      refreshing = null
+    })
+  return refreshing
+}
 
 /** Набор совпадает с белым списком в MapAssetService на бэкенде. */
 export const MAP_LOCATIONS = ['hvoiny', 'small_berdovka', 'nizina'] as const
@@ -16,6 +45,8 @@ async function fetchWithProgress(
   url: string,
   onProgress?: (ratio: number) => void,
   authenticated = true,
+  /** Вторая попытка после обновления токена — обновлять ещё раз уже незачем. */
+  retryExpired = true,
 ): Promise<ArrayBuffer> {
   const headers: Record<string, string> = {}
   if (authenticated) {
@@ -31,6 +62,16 @@ async function fetchWithProgress(
   // режима не зависит и при переходе на чужой домен отбрасывается — что и
   // правильно, туда его отдавать незачем.
   const response = await fetch(url, { headers, credentials: 'omit' })
+
+  // 401 на длинной прогулке — это почти всегда истёкший токен, а не потерянный
+  // доступ: ранг проверяют один раз на входе в мир. Обновляемся по refresh-куке
+  // и повторяем ровно один раз; если и она мертва, дальше честный отказ.
+  if (response.status === 401 && authenticated && retryExpired) {
+    void response.body?.cancel()
+    const token = await refreshAccessToken()
+    if (token) return fetchWithProgress(url, onProgress, authenticated, false)
+  }
+
   if (!response.ok || !response.body) {
     throw new ApiError(response.status, `HTTP ${response.status}`)
   }

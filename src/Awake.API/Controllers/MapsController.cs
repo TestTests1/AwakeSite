@@ -77,6 +77,12 @@ public class MapsController(ISender sender) : ControllerBase
     /// Отдаёт файл куска с диска — только для стенда, где внешнего хранилища
     /// нет. Куски неизменяемы по построению: правка карты рождает новую
     /// нарезку, а не переписывает старую, поэтому кэш годичный.
+    ///
+    /// Кроме манифеста: на боевом новая нарезка уезжает под новый префикс, а на
+    /// стенде ложится поверх старой теми же именами. Годичный кэш на манифесте
+    /// означал бы, что после пере-нарезки браузер продолжает ходить по старому
+    /// списку клеток и жаловаться на несуществующие файлы, пока кто-нибудь не
+    /// догадается про жёсткую перезагрузку.
     /// </summary>
     [HttpGet("{location}/chunks/{file}")]
     [RankAuthorize(UserRank.Member)]
@@ -85,8 +91,11 @@ public class MapsController(ISender sender) : ControllerBase
         var path = assets.GetChunkFilePath(location, file);
         if (path is null) return NotFound();
 
-        Response.Headers.CacheControl = "private, max-age=31536000, immutable";
-        return PhysicalFile(path, file.EndsWith(".json") ? "application/json" : "model/gltf-binary");
+        var isManifest = file.EndsWith(".json");
+        Response.Headers.CacheControl = isManifest
+            ? "private, no-cache"
+            : "private, max-age=31536000, immutable";
+        return PhysicalFile(path, isManifest ? "application/json" : "model/gltf-binary");
     }
 
     /// <summary>Список общеклановых расстановок заграждений на локации.</summary>

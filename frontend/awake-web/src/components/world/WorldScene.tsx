@@ -272,6 +272,17 @@ export function WorldScene({
   }, [manifest])
 
   /**
+   * Есть ли клетка над этими координатами в нарезке. Множество ключей строится
+   * один раз: клеток сотни, а спрашивают каждый кадр.
+   */
+  const hasChunkAt = useMemo(() => {
+    const keys = new Set(manifest.chunks.map((entry) => `${entry.x}_${entry.z}`))
+    const size = manifest.chunkSize
+    return (x: number, z: number) =>
+      keys.has(`${Math.floor(x / size)}_${Math.floor(z / size)}`)
+  }, [manifest])
+
+  /**
    * Коллайдер живёт рядом со сценой, а не внутри Player: куски приходят и
    * уходят независимо от того, перерисовался ли Player.
    */
@@ -308,6 +319,7 @@ export function WorldScene({
           scene={group}
           bounds={view.bounds}
           collider={collider}
+          hasChunkAt={hasChunkAt}
           spawn={manifest.spawn}
           flying={flying}
           placed={placed}
@@ -318,7 +330,7 @@ export function WorldScene({
         {thirdPerson && <LocalAvatar playerRef={playerRef} />}
         {building && (
           <Builder
-            scene={group}
+            collider={collider}
             placed={placed}
             kindIndex={kindIndex}
             rotation={rotation}
@@ -378,6 +390,15 @@ export function WorldScene({
               {t('world.close')}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Сбой куска после входа виден только здесь. Молча он не отличим от
+          края прогрузки: впереди туман, и непришедшая клетка выглядит ровно
+          как та, до которой игрок ещё не дошёл. */}
+      {stream.ready && stream.failed > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-destructive/40 bg-card/90 px-3 py-2 text-xs text-destructive">
+          {t('world.chunkErrors', { count: stream.failed })}
         </div>
       )}
 

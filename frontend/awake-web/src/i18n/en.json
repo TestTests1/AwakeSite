@@ -105,6 +105,7 @@
     "close": "Close map",
     "cancel": "Cancel loading",
     "streaming": "Loading the surroundings…",
+    "chunkErrors": "Map areas that failed to load: {{count}}",
     "materialsFailed": "Failed to load map materials. Please reload the page.",
     "spawnFailed": "Failed to load the area under the entry point. Reload the page or pick another map.",
     "menu": {
