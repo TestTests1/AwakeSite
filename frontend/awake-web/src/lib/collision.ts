@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
+import type { MeshBVH } from 'three-mesh-bvh'
 
 // Через Object.assign, а не присваиванием по одному: в three-mesh-bvh 0.9 типы
 // самих функций и типы, объявленные ими же на прототипе BufferGeometry,
@@ -32,6 +33,8 @@ export class TerrainCollider {
   private readonly raycaster = new THREE.Raycaster()
   private readonly rayBox = new THREE.Box3()
   private readonly to = new THREE.Vector3()
+  /** Переиспользуется каждый кадр: боксов проверяется несколько за шаг. */
+  private readonly boxToMesh = new THREE.Matrix4()
 
   constructor(scene?: THREE.Object3D) {
     if (scene) this.addPart(scene)
@@ -167,6 +170,38 @@ export class TerrainCollider {
       }
     }
     return nearest
+  }
+
+  /**
+   * Пересекается ли коробка с геометрией карты или с заграждениями.
+   *
+   * Ради этого метода всё и затевалось: телом игрока стал объём, а не точка,
+   * и «пролезет ли между барикадами» перестало зависеть от того, удачно ли
+   * расставлены лучи.
+   *
+   * Куски без готового дерева пропускаются — ровно как в cast: перебор
+   * миллиона треугольников напрямую стоил бы кадра. Такой кусок ещё не
+   * прогрет prepare, и игрок в него всё равно не упирается.
+   *
+   * Коробка приходит в мировых координатах, а дерево живёт в системе
+   * координат меша — отсюда обратная матрица. У кусков она не единичная:
+   * сжатие карты выносит размещение в матрицу узла.
+   */
+  boxBlocked(box: THREE.Box3): boolean {
+    for (const group of [this.parts, this.dynamic]) {
+      for (const part of group) {
+        // Приведение по той же причине, что и Object.assign выше: в
+        // three-mesh-bvh 0.9 boundsTree объявлен базовым GeometryBVH, у
+        // которого intersectsBox нет, хотя computeBoundsTree по умолчанию
+        // кладёт туда именно MeshBVH — с этим методом.
+        const tree = part.mesh.geometry.boundsTree as MeshBVH | undefined
+        if (!tree) continue
+        if (!part.box.intersectsBox(box)) continue
+        this.boxToMesh.copy(part.mesh.matrixWorld).invert()
+        if (tree.intersectsBox(box, this.boxToMesh)) return true
+      }
+    }
+    return false
   }
 
   /**
