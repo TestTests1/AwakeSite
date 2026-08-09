@@ -4,14 +4,34 @@ import * as THREE from 'three'
 import { useKeyboard } from '@/hooks/useKeyboard'
 import { facingAngle } from '@/lib/avatar'
 import { TerrainCollider } from '@/lib/collision'
+import body from '@/lib/playerBody.json'
 import type { PlacedProp } from '@/lib/props'
 import type { PlayerReport } from './RenderStats'
 import { usePointerLook } from './usePointerLook'
 import { usePropColliders, usePropModels } from './usePropModels'
 
-/** Всё в блоках игры: блок = 1 единица. */
-const BODY_HEIGHT = 2 // персонаж занимает два блока по высоте
-const EYE_HEIGHT = 1.8 // глаза почти у макушки, как в блочных играх
+// Всё в блоках игры: блок = 1 единица.
+/** Сторона коробки тела в плане — по наибольшему размеру, см. комментарий ниже. */
+const BODY_WIDTH = body.standing.width
+const BODY_STAND = body.standing.height
+const EYE_HEIGHT = body.standing.eye ?? BODY_STAND - 0.15
+/**
+ * Зазор снизу и сверху, чтобы пол, на котором игрок стоит, не считался
+ * препятствием: коробка вплотную к опоре пересекалась бы с ней каждый кадр.
+ */
+const SKIN = 0.02
+
+// Почему коробка квадратная в плане и почему она не крутится за взглядом.
+//
+// Размеры взяты из коробки попаданий самой игры: в плане тело не квадрат
+// (0.8875 в ширину с руками против 0.3948 в глубину), но сторону берём по
+// наибольшему из двух. Тело в просмотрщике не поворачивается вместе со
+// взглядом нарочно: иначе одна и та же щель между заграждениями то пропускала
+// бы, то нет — смотря боком человек идёт или лицом, — и ответ «пролезет ли»
+// перестал бы быть ответом. Так устроены блочные игры, и так ответ остаётся
+// строгим в одну сторону: если по квадрату прошло, то пройдёт при любом
+// развороте.
+
 const STEP_UP = 1.05 // ступенька в один блок берётся ходьбой, как в игре
 const WALK_SPEED = 6
 const RUN_SPEED = 12
@@ -20,13 +40,6 @@ const FLY_BOOST = 60
 const GRAVITY = 26
 const JUMP_SPEED = 8.5
 const FALL_LIMIT = 60 // дальше вниз луч не пускаем, это уже свободное падение
-const BODY_RADIUS = 0.35
-/**
- * Высоты, на которых щупаем стены. Нижняя — выше ступеньки, иначе не зайти на
- * блок; верхняя — под макушкой, чтобы в проём высотой в один блок персонаж не
- * пролезал, ровно как в игре.
- */
-const WALL_PROBES = [STEP_UP + 0.15, BODY_HEIGHT - 0.15]
 /** Радиус, в котором держим построенные деревья столкновений. */
 const PREPARE_RADIUS = 48
 
@@ -94,9 +107,11 @@ export interface PlayerProps {
  * Ходьба от первого лица: гравитация, шаг на блок вверх, упор в стены.
  *
  * Полноценная физика тут не нужна и не потянет — коллайдер по геометрии карты
- * весит слишком много. Вместо тела в физическом мире стреляем лучами: один вниз
- * ищет опору, два вперёд упираются в стены. Для статичного ландшафта этого
- * достаточно, а стоит оно доли миллисекунды.
+ * весит слишком много. Вместо тела в физическом мире держим коробку размером с
+ * игрока: вниз по-прежнему стреляем лучом за опорой, а горизонтальный шаг
+ * проверяем пересечением этой коробки с геометрией. Лучей вперёд не хватало
+ * ровно там, ради чего всё затевалось: между двумя заграждениями они
+ * проскакивали в щель, в которую тело не пролезает.
  */
 export function Player({
   scene,
@@ -118,9 +133,9 @@ export function Player({
   // свой коллайдер освобождаем, чужой — нет: им распоряжается тот, кто создал
   useEffect(() => () => { if (!colliderProp) collider.dispose() }, [collider, colliderProp])
 
-  // Заграждения подключаются к тем же лучам, что и рельеф, поэтому упор в них
-  // получается по настоящей геометрии модели: сквозь проём баррикады с окном
-  // проходишь, в саму баррикаду — нет.
+  // Заграждения проверяются тем же коллайдером, что и рельеф, поэтому упор в
+  // них получается по настоящей геометрии модели: сквозь проём баррикады с
+  // окном проходишь, в саму баррикаду — нет.
   const models = usePropModels()
   const propColliders = usePropColliders(placed, models)
   useEffect(() => {
@@ -134,12 +149,24 @@ export function Player({
   const started = useRef(false)
   /** Высота до применения гравитации в этом кадре — к ней и откатываемся. */
   const beforeGravity = useRef(0)
+  /** Текущая высота тела: меняется приседом (задача 6). */
+  const bodyHeight = useRef(BODY_STAND)
+
+  /** Коробка тела для проверок; переиспользуется, копий не плодим. */
+  const probe = useRef(new THREE.Box3())
+
+  /** Коробка тела с ногами в (x, y, z) заданной высоты. */
+  const bodyAt = (x: number, y: number, z: number, height: number) => {
+    const half = BODY_WIDTH / 2
+    probe.current.min.set(x - half, y + SKIN, z - half)
+    probe.current.max.set(x + half, y + height - SKIN, z + half)
+    return probe.current
+  }
 
   const forward = useRef(new THREE.Vector3())
   const right = useRef(new THREE.Vector3())
   const step = useRef(new THREE.Vector3())
   const origin = useRef(new THREE.Vector3())
-  const direction = useRef(new THREE.Vector3())
   const back = useRef(new THREE.Vector3())
 
   /** Позиция на прошлом кадре — из неё считаются скорость и разворот фигуры. */
@@ -242,11 +269,13 @@ export function Player({
           grounded: false,
           yaw: 0,
           speed: 0,
+          crouching: false,
         }
         state.current.position.copy(feet.current)
         state.current.grounded = isFlying ? false : grounded.current
         state.current.yaw = yaw.current
         state.current.speed = speed
+        state.current.crouching = bodyHeight.current !== BODY_STAND
       }
     }
 
@@ -278,22 +307,54 @@ export function Player({
 
     collider.prepare(feet.current, PREPARE_RADIUS)
 
-    /** Двигает по одной оси и откатывает, если упёрлись — так выходит скольжение вдоль стены. */
+    /**
+     * Двигает по одной оси. Свободно — едем целиком; упёрлись — пробуем
+     * переступить на блок вверх; не вышло — подъезжаем к стене вплотную
+     * половинным делением.
+     *
+     * Раньше при любом попадании луча шаг по оси отменялся целиком, и игрок
+     * замирал в полуметре от стены. Подъезд вплотную и есть то самое
+     * скольжение вдоль стены: осевое разделение уже было, не хватало
+     * остановки в точке касания.
+     */
     const moveAxis = (amount: number, axis: 'x' | 'z') => {
       if (amount === 0) return
-      direction.current.set(
-        axis === 'x' ? Math.sign(amount) : 0,
-        0,
-        axis === 'z' ? Math.sign(amount) : 0,
-      )
+      const from = axis === 'x' ? feet.current.x : feet.current.z
 
-      for (const height of WALL_PROBES) {
-        origin.current.copy(feet.current).setY(feet.current.y + height)
-        const hit = collider.cast(origin.current, direction.current, Math.abs(amount) + BODY_RADIUS)
-        if (hit !== null) return
+      const freeAt = (value: number, y: number) => {
+        const x = axis === 'x' ? value : feet.current.x
+        const z = axis === 'z' ? value : feet.current.z
+        return !collider.boxBlocked(bodyAt(x, y, z, bodyHeight.current))
       }
-      if (axis === 'x') feet.current.x += amount
-      else feet.current.z += amount
+      const place = (value: number) => {
+        if (axis === 'x') feet.current.x = value
+        else feet.current.z = value
+      }
+
+      if (freeAt(from + amount, feet.current.y)) {
+        place(from + amount)
+        return
+      }
+
+      // ступенька в блок: то же движение, но телом, поднятым на STEP_UP.
+      // Высоту подхватит проверка опоры ниже по кадру — если ступеньки там на
+      // самом деле нет, игрок просто упадёт обратно.
+      if (grounded.current && freeAt(from + amount, feet.current.y + STEP_UP)) {
+        place(from + amount)
+        feet.current.y += STEP_UP
+        return
+      }
+
+      // подъезд вплотную: пять делений дают точность около двух сантиметров
+      // при самом быстром беге
+      let free = 0
+      let blocked = amount
+      for (let i = 0; i < 5; i++) {
+        const middle = (free + blocked) / 2
+        if (freeAt(from + middle, feet.current.y)) free = middle
+        else blocked = middle
+      }
+      place(from + free)
     }
 
     // направление по взгляду, но строго горизонтально
@@ -330,7 +391,7 @@ export function Player({
     // упёрлись макушкой в потолок — гасим подъём, иначе персонаж въезжает
     // головой в блок над собой и зависает в нём
     if (velocityY.current > 0) {
-      origin.current.copy(feet.current).setY(feet.current.y + BODY_HEIGHT - 0.1)
+      origin.current.copy(feet.current).setY(feet.current.y + bodyHeight.current - 0.1)
       const toCeiling = collider.cast(origin.current, UP, velocityY.current * delta + 0.15)
       if (toCeiling !== null) velocityY.current = 0
     }

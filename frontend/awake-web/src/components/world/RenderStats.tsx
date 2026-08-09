@@ -81,6 +81,8 @@ export interface PlayerReport {
   yaw: number
   /** Горизонтальная скорость в блоках в секунду. */
   speed: number
+  /** Игрок присел: нужно тем, кто рисует его тело в настоящий рост. */
+  crouching: boolean
 }
 
 export function RenderStatsOverlay({
