@@ -61,6 +61,28 @@ def measure(boxes: dict[str, np.ndarray]) -> dict[str, float]:
     }
 
 
+def kept_crouching() -> dict[str, float | None]:
+    """
+    Присед из уже записанного файла, если его туда вписали руками.
+
+    Из игровых файлов присед не достаётся (разбор — в README), поэтому его
+    числа появляются здесь единственным путём: человек замерил их в игре и
+    вписал. Перезапуск обмера после обновления игры не должен стирать этот
+    труд — иначе замер придётся делать заново, и в тишине.
+    """
+    empty: dict[str, float | None] = {"width": None, "depth": None, "height": None, "eye": None}
+    if not OUT.exists():
+        return empty
+    try:
+        previous = json.loads(OUT.read_text(encoding="utf-8")).get("crouching") or {}
+    except (json.JSONDecodeError, OSError):
+        return empty
+    kept = {key: previous.get(key) for key in empty}
+    if any(value is not None for value in kept.values()):
+        print(f"присед взят из прежнего файла (замер руками): {kept}")
+    return kept
+
+
 def main() -> None:
     boxes = bone_boxes(HITBOX)
     standing = measure(boxes)
@@ -77,8 +99,9 @@ def main() -> None:
         # Движения игрока лежат в скелете на 71 безымянную дорожку, коробка
         # попаданий — на 62 кости, и соответствие между ними опровергнуто
         # замером (разбор — в README). Правдоподобное число сюда ставить нельзя:
-        # на этих числах держится весь ответ про барикады.
-        "crouching": {"width": None, "depth": None, "height": None, "eye": None},
+        # на этих числах держится весь ответ про барикады. Вписанное руками
+        # значение переживает перезапуск — см. kept_crouching.
+        "crouching": kept_crouching(),
         "source": "highpoly/character/hitbox.mcvd",
         "notes": {
             "eye": "оценка: верх коробки шеи минус 0.15",
