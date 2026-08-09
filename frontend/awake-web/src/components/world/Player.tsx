@@ -34,8 +34,6 @@ const PREPARE_RADIUS = 48
 const CAMERA_BACK = 5.5
 /** Зазор до стены, чтобы камера не въезжала в неё вплотную. */
 const CAMERA_MARGIN = 0.4
-/** Ближе этого камера не подходит, иначе она оказывается внутри фигуры. */
-const CAMERA_MIN = 1.2
 
 const DOWN = new THREE.Vector3(0, -1, 0)
 const UP = new THREE.Vector3(0, 1, 0)
@@ -230,7 +228,11 @@ export function Player({
         back.current.copy(forward.current).negate()
         let distance = CAMERA_BACK
         const hit = collider.cast(camera.position, back.current, CAMERA_BACK + CAMERA_MARGIN)
-        if (hit !== null) distance = Math.max(CAMERA_MIN, hit - CAMERA_MARGIN)
+        // Нижнего предела здесь быть не должно: он перебивал найденное
+        // расстояние до стены и загонял камеру внутрь неё. Прижались спиной —
+        // камера подъезжает вплотную к затылку, это правильное поведение, а не
+        // повод её отпустить.
+        if (hit !== null) distance = Math.max(0, hit - CAMERA_MARGIN)
         camera.position.addScaledVector(back.current, distance)
       }
 
