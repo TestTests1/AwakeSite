@@ -9,6 +9,7 @@ import type { MapManifest } from '@/lib/mapManifest'
 import { loadSky } from '@/lib/sky'
 import { loadPlaced, PROP_KINDS, savePlaced, type PlacedProp } from '@/lib/props'
 import { Avatar, useAvatarSource, type AvatarSample } from './Avatar'
+import { BodyBox, BodyBoxOverlay } from './BodyBox'
 import { Builder, PlacedProps } from './Builder'
 import { LayoutPanel } from './LayoutPanel'
 import { MapModel } from './MapModel'
@@ -149,6 +150,23 @@ export function WorldScene({
 
   /** Камера за спиной: только так видно собственную фигуру. */
   const [thirdPerson, setThirdPerson] = useState(false)
+
+  /**
+   * Показ коробки тела и просвета над головой. Выключен по умолчанию: это
+   * отладка, а не часть игры, и пока он выключен, лучи вверх не пускаются
+   * вовсе — компонент просто не смонтирован.
+   */
+  const [bodyBox, setBodyBox] = useState(false)
+  /**
+   * Просвет над головой в метрах. Через ref, а не состояние, по той же
+   * причине, что и состояние персонажа: замер идёт каждый кадр, а надпись
+   * забирает его несколько раз в секунду.
+   */
+  const clearanceRef = useRef<number | null>(null)
+  const reportClearance = useCallback((metres: number | null) => {
+    clearanceRef.current = metres
+  }, [])
+
   const [building, setBuilding] = useState(false)
   const [kindIndex, setKindIndex] = useState(0)
   const [rotation, setRotation] = useState(0)
@@ -236,6 +254,8 @@ export function WorldScene({
       if (event.code === 'KeyF') setFlying((value) => !value)
       if (event.code === 'KeyB') setBuilding((value) => !value)
       if (event.code === 'KeyV') setThirdPerson((value) => !value)
+      // цифры 0–3 заняты отладкой отрисовки в RenderTuning, поэтому «4»
+      if (event.code === 'Digit4') setBodyBox((value) => !value)
     }
     // колесо перебирает заграждения: цифровые клавиши заняты отладкой
     function onWheel(event: WheelEvent) {
@@ -332,6 +352,9 @@ export function WorldScene({
           state={playerRef}
         />
         {thirdPerson && <LocalAvatar playerRef={playerRef} />}
+        {bodyBox && (
+          <BodyBox playerRef={playerRef} collider={collider} onClearance={reportClearance} />
+        )}
         {building && (
           <Builder
             collider={collider}
@@ -407,6 +430,10 @@ export function WorldScene({
       )}
 
       <RenderStatsOverlay report={report} playerRef={playerRef} />
+
+      {/* Надпись живёт и гаснет вместе с коробкой: числа без коробки не с чем
+          сверять, а лучи вверх без показа никому не нужны. */}
+      {bodyBox && <BodyBoxOverlay clearance={clearanceRef} />}
 
       <div className="pointer-events-none absolute bottom-4 left-4 rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground">
         {flying ? t('world.flyHint') : t('world.walkHint')}
