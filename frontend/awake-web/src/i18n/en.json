@@ -97,7 +97,7 @@
     "loadError": "Failed to load the 3D model",
     "noWebgl": "Your browser doesn't support WebGL — the 3D map is unavailable",
     "clickToLook": "Click the map to look around",
-    "walkHint": "WASD to move, Shift to run, Space to jump, V for view, F to fly, B to build, Esc for menu",
+    "walkHint": "WASD to move, Shift to run, Space to jump, V for view, F to fly, B to build, 4 for body box, Esc for menu",
     "buildHint": "LMB place, RMB remove, wheel to pick, R to rotate, B to exit · placed: {{count}}",
     "flyOn": "Fly",
     "flyOff": "Land",
