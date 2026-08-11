@@ -24,7 +24,7 @@ export function Navbar() {
     void navigate({ to: '/login' })
   }
 
-  const isColonelPlus = (user?.rank ?? 0) >= UserRank.Colonel
+  const canManageUsers = (user?.rank ?? 0) >= UserRank.Officer
 
   const navLinks = [
     { to: '/dashboard' as const, label: t('nav.dashboard') },
@@ -53,7 +53,7 @@ export function Navbar() {
               {link.label}
             </Link>
           ))}
-          {isColonelPlus && (
+          {canManageUsers && (
             <Link
               to="/manage/users"
               className="text-text-muted hover:text-text-primary transition-colors"
@@ -106,7 +106,7 @@ export function Navbar() {
               {link.label}
             </Link>
           ))}
-          {isColonelPlus && (
+          {canManageUsers && (
             <Link
               to="/manage/users"
               className="text-text-muted hover:text-text-primary transition-colors"

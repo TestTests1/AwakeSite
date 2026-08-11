@@ -9,7 +9,7 @@ import {
   type PlacedProp,
   type PropKind,
 } from '@/lib/props'
-import { usePropColliders, usePropModels } from './usePropModels'
+import { usePropModels } from './usePropModels'
 
 /** Дальше этого ставить нельзя: прицел уже не показывает, куда попадёт. */
 const REACH = 14
@@ -20,13 +20,24 @@ const ROTATION_STEP = Math.PI / 8
 const DOWN = new THREE.Vector3(0, -1, 0)
 
 export interface BuilderProps {
-  scene: THREE.Group
+  /**
+   * Тот же коллайдер, по которому ходит персонаж, а не свой собственный.
+   *
+   * Свой строился один раз по содержимому сцены на момент включения режима и
+   * после этого не знал ни о пришедших кусках, ни об ушедших: отойди на сотню
+   * метров — и прицел упирался в пустоту, поставить было нечего. Со сценой,
+   * которая меняется под ногами, слепок больше не годится.
+   */
+  collider: TerrainCollider
   placed: PlacedProp[]
   kindIndex: number
   onPlace: (prop: PlacedProp) => void
   onRemove: (id: string) => void
   onRotate: (delta: number) => void
   rotation: number
+  /** Стройка принимает клавиши. Выключается при открытом меню — иначе набор
+      имени расстановки клавишей "к" (физически KeyR) крутил бы заграждение. */
+  active?: boolean
 }
 
 const snap = (value: number) => Math.round(value / GRID) * GRID
@@ -119,24 +130,20 @@ export function PlacedProps({ placed }: { placed: PlacedProp[] }) {
  * землю, а не висит там, куда пришёлся взгляд.
  */
 export function Builder({
-  scene,
+  collider,
   placed,
   kindIndex,
   onPlace,
   onRemove,
   onRotate,
   rotation,
+  active = true,
 }: BuilderProps) {
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
-  const collider = useMemo(() => new TerrainCollider(scene), [scene])
-
   const models = usePropModels()
-  // прицел должен упираться в уже поставленное, а не смотреть сквозь него
-  const propColliders = usePropColliders(placed, models)
-  useEffect(() => {
-    collider.setDynamic(propColliders)
-  }, [collider, propColliders])
+  // Заграждения в этот коллайдер уже подставляет Player из того же списка
+  // placed, поэтому прицел упирается в уже поставленное сам собой.
 
   const ghost = useRef<THREE.Group>(null)
   const aim = useRef<THREE.Vector3 | null>(null)
@@ -215,6 +222,7 @@ export function Builder({
     }
     function onKey(event: KeyboardEvent) {
       if (event.repeat) return
+      if (!active) return
       if (event.code === 'KeyR') onRotate(event.shiftKey ? -ROTATION_STEP : ROTATION_STEP)
     }
     // правая кнопка под захватом курсора всё равно шлёт contextmenu
@@ -230,7 +238,7 @@ export function Builder({
       element.removeEventListener('contextmenu', onContextMenu)
       window.removeEventListener('keydown', onKey)
     }
-  }, [gl, place, removeNearest, onRotate])
+  }, [gl, place, removeNearest, onRotate, active])
 
   const ghostModel = useMemo(() => {
     const source = models.get(kind.id)

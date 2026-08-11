@@ -79,6 +79,11 @@ SC_Map_Dump-main/
 # а каждый пере-экспорт добавлял бы в историю новую полную копию. Раздаются они
 # из внешнего хранилища — см. MapAssets:BaseUrl и tools/maps/README.md.
 src/Awake.API/MapAssets/*.glb
+# Нарезка кусками: под тысячу файлов на три карты, вместе больше гигабайта.
+# Правило со звёздочкой выше их не ловит — оно только на один уровень, а куски
+# лежат в v2/<локация>/ и среди них есть manifest.json. Один git add -A без
+# этой строки утащил бы всё это в индекс.
+src/Awake.API/MapAssets/v2/
 frontend/awake-web/public/avatars/*.glb
 frontend/awake-web/public/props/*.glb
 
@@ -91,3 +96,10 @@ v1-ultrakill/
 
 # Локальное состояние wrangler (кеш, симуляция хранилищ)
 .wrangler/
+
+# Байт-код Python: попал в репозиторий вместе с конвейером карт
+__pycache__/
+*.pyc
+
+# Обмеры карт: координаты блоков и объектов, считаются scan_objects.py
+tools/maps/scans/

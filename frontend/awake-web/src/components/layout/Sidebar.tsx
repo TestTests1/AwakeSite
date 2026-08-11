@@ -39,7 +39,7 @@ export function Sidebar() {
 
   const rank = user?.rank ?? 0
   const isMemberPlus = rank >= UserRank.Member
-  const isColonelPlus = rank >= UserRank.Colonel
+  const canManageUsers = rank >= UserRank.Officer
 
   const navLinks = [
     ...(isMemberPlus ? [{ to: '/dashboard' as const, label: t('nav.dashboard'), icon: LayoutDashboard }] : []),
@@ -91,7 +91,7 @@ export function Sidebar() {
           <NavLink key={link.to} {...link} />
         ))}
 
-        {isColonelPlus && (
+        {canManageUsers && (
           <>
             <div className="py-2"><Separator /></div>
             <NavLink to="/manage/users" label={t('nav.manage')} icon={Users} />

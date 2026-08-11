@@ -1,0 +1,20 @@
+{
+  "standing": {
+    "width": 0.8875,
+    "depth": 0.3948,
+    "height": 1.9507,
+    "eye": 1.8007
+  },
+  "crouching": {
+    "width": null,
+    "depth": null,
+    "height": null,
+    "eye": null
+  },
+  "source": "highpoly/character/hitbox.mcvd",
+  "notes": {
+    "eye": "оценка: верх коробки шеи минус 0.15",
+    "width": "с руками, руки в бинд-позе висят вдоль тела",
+    "crouching": "не измерен: движения игрока в скелете без имён, мерить надо руками в игре — см. tools/character/README.md"
+  }
+}

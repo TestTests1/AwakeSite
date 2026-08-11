@@ -9,9 +9,10 @@ import type { PlacedProp } from '@/lib/props'
 /**
  * Общеклановые расстановки заграждений: сохранение под именем, загрузка, удаление.
  *
- * Показывается только вне режима ходьбы — там курсор захвачен холстом и до
- * кнопок всё равно не добраться. Текущая расстановка при этом продолжает
- * автоматически храниться в браузере, так что несохранённое не пропадает.
+ * Показывается только внутри меню по Esc — там курсор отпущен и до кнопок
+ * можно дотянуться, в самой же ходьбе он захвачен холстом. Текущая
+ * расстановка при этом продолжает автоматически храниться в браузере, так что
+ * несохранённое не пропадает.
  */
 export function LayoutPanel({
   location,
@@ -61,7 +62,7 @@ export function LayoutPanel({
   })
 
   return (
-    <div className="absolute left-4 bottom-4 w-72 rounded-md border border-border bg-card/95 p-3">
+    <div className="w-full rounded-md border border-border bg-card/95 p-3">
       <p className="mb-2 text-xs font-medium text-foreground">Расстановки клана</p>
 
       <div className="mb-2 flex gap-2">

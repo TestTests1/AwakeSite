@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/_auth/manage/users')({
   beforeLoad: () => {
-    if ((useAuthStore.getState().user?.rank ?? 0) < UserRank.Colonel) {
+    if ((useAuthStore.getState().user?.rank ?? 0) < UserRank.Officer) {
       throw redirect({ to: '/dashboard' })
     }
   },
@@ -23,6 +23,17 @@ export const Route = createFileRoute('/_auth/manage/users')({
 })
 
 const ALL_RANKS = [UserRank.Guest, UserRank.Member, UserRank.Officer, UserRank.Colonel, UserRank.Leader]
+
+/**
+ * Ранги образуют строгую лестницу: править можно только тех, кто ниже тебя, и
+ * поднимать не выше ступени под собой — офицер до участника, полковник до
+ * офицера, лидер до полковника. Равный ранг недоступен в обе стороны, и это же
+ * закрывает собственную строку. Те же два правила проверяет сервер, здесь они
+ * лишь убирают из интерфейса заведомо отказные действия.
+ */
+function canManage(targetRank: number, currentRank: number | undefined): boolean {
+  return targetRank < (currentRank ?? 0)
+}
 
 const RANK_CLASSES: Record<number, string> = {
   [UserRank.Guest]: 'bg-secondary text-muted-foreground border-border',
@@ -53,7 +64,7 @@ function RankCell({ user, editing, currentUser, onChange }: {
       </SelectTrigger>
       <SelectContent>
         {ALL_RANKS
-          .filter((r) => r !== UserRank.Leader || currentUser?.rank === UserRank.Leader)
+          .filter((r) => r < (currentUser?.rank ?? 0))
           .map((r) => (
             <SelectItem key={r} value={r.toString()}>
               {t(`users.ranks.${r}`)}
@@ -122,7 +133,7 @@ function ManageUsersPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">{user.email ?? '—'}</TableCell>
                     <TableCell className="text-right">
-                      {user.id !== currentUser?.userId && (
+                      {canManage(user.rank, currentUser?.rank) && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -152,7 +163,7 @@ function ManageUsersPage() {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs text-muted-foreground">{user.email ?? '—'}</span>
-                  {user.id !== currentUser?.userId && (
+                  {canManage(user.rank, currentUser?.rank) && (
                     <Button
                       variant="ghost"
                       size="sm"

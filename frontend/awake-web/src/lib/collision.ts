@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
+import type { MeshBVH } from 'three-mesh-bvh'
 
 // Через Object.assign, а не присваиванием по одному: в three-mesh-bvh 0.9 типы
 // самих функций и типы, объявленные ими же на прототипе BufferGeometry,
@@ -32,14 +33,43 @@ export class TerrainCollider {
   private readonly raycaster = new THREE.Raycaster()
   private readonly rayBox = new THREE.Box3()
   private readonly to = new THREE.Vector3()
+  /** Переиспользуется каждый кадр: боксов проверяется несколько за шаг. */
+  private readonly boxToMesh = new THREE.Matrix4()
 
-  constructor(scene: THREE.Object3D) {
-    scene.updateMatrixWorld(true)
-    scene.traverse((object) => {
+  constructor(scene?: THREE.Object3D) {
+    if (scene) this.addPart(scene)
+    this.raycaster.firstHitOnly = true
+  }
+
+  /**
+   * Подключает кусок карты к лучам.
+   *
+   * Дерево здесь не строится: оно строится лениво в prepare, и только рядом с
+   * игроком. Кусок, пришедший на краю дальности, игроку не нужен ещё секунды —
+   * а построение дерева на его геометрию стоит кадра.
+   */
+  addPart(root: THREE.Object3D): void {
+    root.updateMatrixWorld(true)
+    root.traverse((object) => {
       if (!(object instanceof THREE.Mesh) || !object.geometry) return
       this.parts.push({ mesh: object, box: new THREE.Box3().setFromObject(object) })
     })
-    this.raycaster.firstHitOnly = true
+  }
+
+  /**
+   * Снимает кусок с лучей и освобождает его деревья.
+   *
+   * Вызывать обязательно до dispose геометрии: иначе в списке остаётся меш с
+   * освобождённым буфером, и первый же луч по нему падает.
+   */
+  removePart(root: THREE.Object3D): void {
+    const inside = new Set<THREE.Object3D>()
+    root.traverse((object) => inside.add(object))
+    for (let i = this.parts.length - 1; i >= 0; i--) {
+      if (!inside.has(this.parts[i].mesh)) continue
+      this.parts[i].mesh.geometry.disposeBoundsTree?.()
+      this.parts.splice(i, 1)
+    }
   }
 
   /**
@@ -58,6 +88,28 @@ export class TerrainCollider {
       if (point.z < min.z - radius || point.z > max.z + radius) continue
       part.mesh.geometry.computeBoundsTree()
     }
+  }
+
+  /**
+   * Есть ли под точкой (x, z) вообще какой-то кусок карты — неважно, готово ли
+   * у него дерево.
+   *
+   * Проверка только по горизонтали, высота не участвует — по той же причине,
+   * что и в prepare: игрок почти всегда выше или ниже коробки куска, под
+   * которым стоит, и проверка по трём осям ответила бы «нет» прямо у него под
+   * ногами. Этим методом отвечает сам коллайдер, а не порог по высоте: он
+   * один знает, какие куски реально загружены в эту секунду, а высота —
+   * только косвенный признак, который путает настоящую пропасть в полу карты
+   * с ещё не прилетевшим куском.
+   */
+  coversColumn(x: number, z: number): boolean {
+    for (const part of this.parts) {
+      const { min, max } = part.box
+      if (x < min.x || x > max.x) continue
+      if (z < min.z || z > max.z) continue
+      return true
+    }
+    return false
   }
 
   /**
@@ -118,6 +170,38 @@ export class TerrainCollider {
       }
     }
     return nearest
+  }
+
+  /**
+   * Пересекается ли коробка с геометрией карты или с заграждениями.
+   *
+   * Ради этого метода всё и затевалось: телом игрока стал объём, а не точка,
+   * и «пролезет ли между барикадами» перестало зависеть от того, удачно ли
+   * расставлены лучи.
+   *
+   * Куски без готового дерева пропускаются — ровно как в cast: перебор
+   * миллиона треугольников напрямую стоил бы кадра. Такой кусок ещё не
+   * прогрет prepare, и игрок в него всё равно не упирается.
+   *
+   * Коробка приходит в мировых координатах, а дерево живёт в системе
+   * координат меша — отсюда обратная матрица. У кусков она не единичная:
+   * сжатие карты выносит размещение в матрицу узла.
+   */
+  boxBlocked(box: THREE.Box3): boolean {
+    for (const group of [this.parts, this.dynamic]) {
+      for (const part of group) {
+        // Приведение по той же причине, что и Object.assign выше: в
+        // three-mesh-bvh 0.9 boundsTree объявлен базовым GeometryBVH, у
+        // которого intersectsBox нет, хотя computeBoundsTree по умолчанию
+        // кладёт туда именно MeshBVH — с этим методом.
+        const tree = part.mesh.geometry.boundsTree as MeshBVH | undefined
+        if (!tree) continue
+        if (!part.box.intersectsBox(box)) continue
+        this.boxToMesh.copy(part.mesh.matrixWorld).invert()
+        if (tree.intersectsBox(box, this.boxToMesh)) return true
+      }
+    }
+    return false
   }
 
   /**
