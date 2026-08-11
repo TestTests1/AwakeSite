@@ -23,6 +23,8 @@ import struct
 import sys
 from pathlib import Path
 
+from map_config import SPAWN_OVERRIDES
+
 # glTF componentType -> normalization divisor for signed/unsigned normalized data
 NORM_DIVISOR = {
     5120: 127.0,     # BYTE
@@ -82,6 +84,14 @@ def main() -> None:
 
     if len(sys.argv) > 2:
         out_path = Path(sys.argv[2])
+        # Имя карты — из имени файла (<карта>.spawn.json), так его передаёт
+        # rebuild_map.py. Ручная точка появления сильнее посчитанной: считанная
+        # стоит над крышей мира и годилась, пока карта грузилась целиком.
+        name = out_path.name.removesuffix(".spawn.json")
+        override = SPAWN_OVERRIDES.get(name)
+        if override is not None:
+            spawn = {"x": override[0], "y": override[1], "z": override[2]}
+            print(f"spawn    заменена ручной для «{name}»: {json.dumps(spawn)}")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(spawn, indent=2) + "\n", encoding="utf-8")
         print(f"wrote    {out_path}")
